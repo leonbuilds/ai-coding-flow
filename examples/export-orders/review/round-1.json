@@ -1,0 +1,20 @@
+{
+  "round": 1,
+  "host": "claude",
+  "host_model": "opus",
+  "engine": "codex",
+  "model": "gpt-5.6-luna",
+  "reasoning": "low",
+  "level": "L3",
+  "start": "e745a9725ffeb4cd8c83eab910cab4ace61f87ee",
+  "end": "be27f2b1ec67b1c1557d9ce22c4b39b29c861bf7",
+  "tree_before": "f3ae5c39d5b9d0ce0ec87061f09f6ab4d2624921",
+  "started_at": "2026-09-18T17:10:33",
+  "mode": "external",
+  "cmd": "codex exec --ephemeral -s workspace-write -C /tmp/demo/repo -o /tmp/demo/repo/.ai/changes/20260918-export-orders/review/round-1.out.md -m gpt-5.6-luna -c model_reasoning_effort=\"low\" -",
+  "seconds": 56,
+  "verdict": "PASS",
+  "invalid_reason": "",
+  "warning": "",
+  "finished_at": "2026-09-18T17:11:29"
+}

@@ -1,0 +1,18 @@
+[
+  {
+    "id": "domain-money-cents",
+    "type": "domain",
+    "scope": "repo",
+    "score": 4,
+    "path": "/tmp/demo/repo/.ai/specs/domain/domain-money-cents.md",
+    "when": "读写、展示或导出订单金额时",
+    "triggers": [
+      "金额",
+      "导出"
+    ],
+    "paths": [
+      "orders/**"
+    ],
+    "status": "active"
+  }
+]

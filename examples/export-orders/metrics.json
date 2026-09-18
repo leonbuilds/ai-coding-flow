@@ -1,0 +1,219 @@
+{
+  "change": "20260918-export-orders",
+  "computed_at": "2026-09-18T17:11:29",
+  "tasks": {
+    "T1": {
+      "v1_lines": 25,
+      "final_lines": 25,
+      "rewritten_lines": 1,
+      "discarded_lines": 1,
+      "fpy": 0.96,
+      "discard_rate": 0.04
+    },
+    "T2": {
+      "v1_lines": 6,
+      "final_lines": 6,
+      "rewritten_lines": 0,
+      "discarded_lines": 0,
+      "fpy": 1.0,
+      "discard_rate": 0.0
+    }
+  },
+  "fpy_weighted": 0.967741935483871,
+  "adoption": {
+    "proposal": {
+      "generated": 1,
+      "accepted": 1,
+      "rejected": 0
+    },
+    "design": {
+      "generated": 2,
+      "accepted": 1,
+      "rejected": 0
+    },
+    "tasks": {
+      "generated": 1,
+      "accepted": 1,
+      "rejected": 0
+    },
+    "build": {
+      "generated": 2,
+      "accepted": 2,
+      "rejected": 0
+    },
+    "review": {
+      "generated": 0,
+      "accepted": 1,
+      "rejected": 0
+    }
+  },
+  "ai_ratio": {
+    "to": "HEAD",
+    "ai_lines": 30,
+    "total_added": 31,
+    "ratio": 0.967741935483871
+  },
+  "ai_signature": [
+    [
+      "orders/export.py",
+      "buf = io.StringIO()",
+      1
+    ],
+    [
+      "orders/export.py",
+      "def to_csv(orders: List[Order]) -> str:",
+      1
+    ],
+    [
+      "orders/export.py",
+      "for o in orders:",
+      1
+    ],
+    [
+      "orders/export.py",
+      "from orders.model import Order",
+      1
+    ],
+    [
+      "orders/export.py",
+      "from typing import List",
+      1
+    ],
+    [
+      "orders/export.py",
+      "import csv",
+      1
+    ],
+    [
+      "orders/export.py",
+      "import io",
+      1
+    ],
+    [
+      "orders/export.py",
+      "return buf.getvalue()",
+      1
+    ],
+    [
+      "orders/export.py",
+      "w = csv.writer(buf, lineterminator=\"\\n\")",
+      1
+    ],
+    [
+      "orders/export.py",
+      "w.writerow([\"id\", \"customer\", \"status\", \"amount_yuan\"])",
+      1
+    ],
+    [
+      "orders/service.py",
+      "def export_csv(self, status: str) -> str:",
+      1
+    ],
+    [
+      "orders/service.py",
+      "from orders.export import to_csv",
+      1
+    ],
+    [
+      "orders/service.py",
+      "return to_csv(self.repo.list_by_status(status))",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "class TestExport(unittest.TestCase):",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "def test_amount_in_yuan(self):",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "def test_comma_in_customer_is_quoted(self):",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "def test_header_only_when_empty(self):",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "from orders.export import to_csv",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "from orders.model import Order",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "if __name__ == \"__main__\":",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "import unittest",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "out = to_csv([Order(7, \"张三\", \"paid\", 12345)])",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "out = to_csv([Order(8, \"a,b\", \"paid\", 100)])",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "self.assertEqual(out.splitlines()[1], \"7,张三,paid,123.45\")",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "self.assertEqual(out.splitlines()[1], '8,\"a,b\",paid,1.00')",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "self.assertEqual(to_csv([]), \"id,customer,status,amount_yuan\\n\")",
+      1
+    ],
+    [
+      "tests/test_export.py",
+      "unittest.main()",
+      1
+    ],
+    [
+      "tests/test_service.py",
+      "def test_export_csv_filters_by_status(self):",
+      1
+    ],
+    [
+      "tests/test_service.py",
+      "self.assertEqual(svc.export_csv(\"paid\"), \"id,customer,status,amount_yuan\\n1,a,paid,1.00\\n\")",
+      1
+    ],
+    [
+      "tests/test_service.py",
+      "svc = OrderService(InMemoryOrderRepo([Order(1, \"a\", \"paid\", 100), Order(2, \"b\", \"created\", 50)]))",
+      1
+    ]
+  ],
+  "files": [
+    "orders/export.py",
+    "orders/service.py",
+    "tests/test_export.py",
+    "tests/test_service.py"
+  ],
+  "commits": [
+    "5b9373537caaaa9c722155d72dabd5de0ccfddd6",
+    "d272a2fbda850f2f6e7706807d260edbfa4da745"
+  ],
+  "to_sha": "5b9373537caaaa9c722155d72dabd5de0ccfddd6"
+}

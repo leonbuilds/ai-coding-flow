@@ -1,0 +1,7 @@
+.omc/
+.DS_Store
+__pycache__/
+*.pyc
+# MCP 清单可能含路径和参数里的凭据，只留在本机
+workbench/mcp.json
+examples/.demo-fake/

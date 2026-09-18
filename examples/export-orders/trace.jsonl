@@ -1,0 +1,17 @@
+{"ts": "2026-09-18T17:10:30", "stage": "proposal", "event": "new", "note": "订单批量导出 CSV"}
+{"ts": "2026-09-18T17:10:30", "stage": "proposal", "event": "note", "note": "recall 1 specs"}
+{"ts": "2026-09-18T17:10:30", "stage": "proposal", "event": "generated"}
+{"ts": "2026-09-18T17:10:30", "stage": "proposal", "event": "accepted"}
+{"ts": "2026-09-18T17:10:30", "stage": "design", "event": "generated"}
+{"ts": "2026-09-18T17:10:30", "stage": "design", "event": "generated"}
+{"ts": "2026-09-18T17:10:30", "stage": "design", "event": "accepted"}
+{"ts": "2026-09-18T17:10:30", "stage": "tasks", "event": "generated"}
+{"ts": "2026-09-18T17:10:30", "stage": "tasks", "event": "accepted"}
+{"ts": "2026-09-18T17:10:31", "stage": "build", "event": "started", "task": "T1"}
+{"ts": "2026-09-18T17:10:31", "stage": "build", "event": "generated", "task": "T1"}
+{"ts": "2026-09-18T17:10:31", "stage": "build", "event": "accepted", "task": "T1"}
+{"ts": "2026-09-18T17:10:32", "stage": "build", "event": "started", "task": "T2"}
+{"ts": "2026-09-18T17:10:32", "stage": "build", "event": "generated", "task": "T2"}
+{"ts": "2026-09-18T17:10:32", "stage": "build", "event": "accepted", "task": "T2"}
+{"ts": "2026-09-18T17:11:29", "stage": "review", "event": "accepted", "note": "round 1 codex/gpt-5.6-luna L3"}
+{"ts": "2026-09-18T17:11:30", "stage": "retro", "event": "closed"}
