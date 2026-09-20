@@ -37,16 +37,18 @@
 │ ① 规则层  全局规则（受管区块，仅在含 .ai/ 的仓库生效）+ 仓库级规则文件    │
 │          CLAUDE.md / AGENTS.md                                          │
 ├──────────────────────────────────────────────────────────────────────────┤
-│ ② 流程层  9 个 Skill（两端通用 SKILL.md）                                │
-│   入口 /flow   接入 /flow-onboard   反哺 /flow-incident                 │
+│ ② 流程层  10 个 Skill（两端通用 SKILL.md）                               │
+│   入口 /flow   接入 /flow-onboard   知识库 /flow-kb   反哺 /flow-incident │
 │   产线 /flow-propose → design → tasks → build → review → retro          │
 │   角色 scout（召回上下文）  verifier（独立审查）                        │
 │   引擎/模型：每次使用时现场选择，不落配置文件                           │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ ③ 工具层  flowctl：生命周期、召回、打分、快照、度量、审查调度（verify）、│
-│          合入后追踪（aftercare）、定位（locate）、事故档案（incident）   │
+│          合入后追踪（aftercare）、定位（locate）、事故档案（incident）、 │
+│          代码知识库（kb scan/plan/draft/lint/freeze/status/recall）     │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ ④ 资产层  spec 库（.ai/specs + ~/.ai-flow/specs）                        │
+│          代码知识库（.ai/kb/：模块页 + 路由索引 + 漂移基线）             │
 │          变更档案（.ai/changes/<日期-slug>/）                           │
 └──────────────────────────────────────────────────────────────────────────┘
         ▲ 线上问题 / 复盘教训 ── 回写成 spec ── 下次需求自动召回 ┘
@@ -57,7 +59,7 @@
 每一条都对应原文的一个坑或一条经验：
 
 1. **通道按硬标准来分**：数步数，不凭手感（[01-lanes.md](01-lanes.md)）。
-2. **上下文精准召回**：每条 spec 都要能回答「什么条件下注入」（触发词 / 路径 / `when`，见 [03-spec-library.md](03-spec-library.md)）。
+2. **上下文精准召回**：每条 spec 都要能回答「什么条件下注入」（触发词 / 路径 / `when`，见 [03-spec-library.md](03-spec-library.md)）；代码事实也一样，先查知识库索引再读页（见 [10-code-kb.md](10-code-kb.md)）。
 3. **审查者必须独立**：上下文独立是底线，模型独立或厂商独立更好（[07-models-and-hosts.md](07-models-and-hosts.md)）。
 4. **人在环里**：提案（propose）和方案（design）两步是硬门禁，其余步骤视情况轻门禁或人工过目。
 5. **一切从文件恢复**：流程状态全部落在 `.ai/` 下，换宿主、换会话都能靠 `flowctl status` 接着做。
@@ -79,8 +81,8 @@ ai-coding-flow/
 │   └── project-template.md         仓库级规则模板，flow-onboard 用
 ├── playbooks/                      场景手册：read-code / add-field-api / bugfix / unit-test / code-review
 ├── skills/
-│   ├── flow/                       入口 skill + flowctl.py + 6 个产线模板
-│   ├── flow-onboard/ flow-propose/ flow-design/ flow-tasks/
+│   ├── flow/                       入口 skill + flowctl.py + kb.py + 6 个产线模板 + templates/kb/ 7 个知识库页模板
+│   ├── flow-onboard/ flow-kb/ flow-propose/ flow-design/ flow-tasks/
 │   ├── flow-build/ flow-review/ flow-retro/ flow-incident/
 ├── agents/
 │   ├── flow-scout.md               Claude 子 Agent 定义，也是 Codex 调用时的 prompt 来源
@@ -93,6 +95,7 @@ ai-coding-flow/
 │   └── export-orders/              demo.sh 跑出来的完整变更档案（含真实 Codex 审查记录，见 06-manual.md）
 └── tests/
     ├── test_flowctl.py             flowctl 的端到端测试
+    ├── test_kb.py                  flowctl kb 在 Java / Go / Python 迷你工程上的端到端测试
     ├── test_wb.py                  wb 的同步 / 漂移检测测试（临时 HOME 下跑）
     └── test_consistency.py         文档/skill 里出现的 flowctl、wb 子命令和长参数必须真实存在
 ```

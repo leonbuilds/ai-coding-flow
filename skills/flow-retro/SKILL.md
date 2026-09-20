@@ -30,8 +30,9 @@ description: Spec 产线第 6 步：算度量（FPY、AI 代码占比、采纳�
 5. **检查 spec 库**：
    - 执行 `flowctl specs lint`，必须零错误；
    - 执行 `flowctl specs report`。标着「修订」或「下架」的条目列给用户决定。下架就是把 status 改成 `retired`，不删文件。
-6. 请用户确认 retro.md 和 spec 的改动。然后删掉 `<!-- flow:todo -->`，执行 `flowctl close`。
-7. **提醒用户**：合入 2–4 周后，执行 `flowctl aftercare <变更>`，查看 AI 代码的存活率，以及之后有多少次提交又改了这批文件。
+6. **检查知识库**：仓库有 `.ai/kb/` 时，先 `flowctl kb scan`，再 `flowctl kb status`。退出码 10 说明这次改动让某些页过期了，在 retro.md 记下过期页，并提醒用户执行 `/flow-kb` 刷新（刷新本身不在本步做）。同时把 proposal.md「知识库页」里勾选过的页逐条标注：有用 / 没用 / 误导，误导的写清楚哪一句和源码不一致，交给 `/flow-kb` 改。
+7. 请用户确认 retro.md 和 spec 的改动。然后删掉 `<!-- flow:todo -->`，执行 `flowctl close`。
+8. **提醒用户**：合入 2–4 周后，执行 `flowctl aftercare <变更>`，查看 AI 代码的存活率，以及之后有多少次提交又改了这批文件。
 
 ## 度量怎么读
 

@@ -11,7 +11,8 @@ description: 个人 AI Coding 流程入口。先按任务步数判断走 Vibe �
 - **宿主**：你在 Claude Code 里运行时，host 是 `claude`；在 Codex 里运行时，host 是 `codex`。需要传 `--host` 的命令，照此填写。
 - **向用户提问**：在 Claude Code 里用 AskUserQuestion 工具，在 Codex 里直接在对话中提问。提问后等用户回答，再继续。
 - **Codex 沙箱**：`flowctl` 的 `snapshot`、`checkpoint`、`verify`、`agent` 要写 `.git`，其中 `verify` 和 `agent` 还会启动另一个 CLI（需要联网）。这些命令被沙箱拦截时，申请提升权限后重试，不要跳过这一步。
-- **状态都在文件里**：`.ai/` 目录保存全部进度，不要依赖会话记忆。会话中断、上下文被压缩，或者换了宿主，都先执行 `flowctl status`。
+- **状态都在文件里**：`.ai/` 目录保存全部进度，不要依赖会话记忆。会话中断、上下文被压缩，或者换了宿主，都先执行 `flowctl status`。它同时会显示代码知识库是新鲜、过期还是缺失。
+- **先查知识库再 grep**：仓库有 `.ai/kb/` 时，找代码先读 `.ai/kb/index.md` 或执行 `flowctl kb recall`，只读命中的页；页里的 `file:line` 仍要打开核对。
 
 ## 第一步：分通道（硬标准，不凭手感）
 
@@ -33,6 +34,7 @@ description: 个人 AI Coding 流程入口。先按任务步数判断走 Vibe �
 |---|---|
 | 用户描述的是线上问题、报警，或测试提的 bug | `/flow-incident` |
 | 仓库里没有 `.ai/`（不管有没有 CLAUDE.md / AGENTS.md） | `/flow-onboard`（它会问 `.ai/` 是否提交，不要自己直接 `flowctl init`） |
+| 有 `.ai/` 但没有 `.ai/kb/_manifest.json`（知识库没生成完） | `/flow-kb`；用户明确说先不做知识库时才跳过 |
 | 没有进行中的变更 | `/flow-propose` |
 | 其他情况 | 以 `flowctl status` 输出的「下一步」为准 |
 

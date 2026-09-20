@@ -8,6 +8,7 @@
   .ai/specs/_scores.jsonl  每次使用后的打分记录
   .ai/changes/<日期-slug>/ 一次变更的全部过程档案
   .ai/current              当前进行中的变更名
+  .ai/kb/                  代码知识库：scan.json、plan.json、各页 .md、index.md、_manifest.json（见 kb.py）
 
 快照存成隐藏 ref：refs/flow/<变更>/<任务>/{base,v1,final}，不动真实暂存区和分支。
 """
@@ -23,6 +24,9 @@ import sys
 import tempfile
 from collections import Counter
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import kb  # noqa: E402  代码知识库子命令
 
 SPEC_TYPES = ("tech", "domain", "dev", "review")
 STAGES = ("proposal", "design", "tasks", "build", "review", "retro")
@@ -398,6 +402,7 @@ def cmd_status(ctx, a):
     recalled = d / "recalled.json"
     if recalled.exists():
         print(f"  召回 spec    {len(json.loads(recalled.read_text(encoding='utf-8')))} 条")
+    print(f"  {kb.status_line(ctx)}")
     print(f"下一步：{next_step(d)}")
 
 
@@ -902,6 +907,9 @@ def cmd_agent(ctx, a):
         # scout 在 Codex 里是只读沙箱：召回结果由这里先写好，scout 只读 recalled.json
         cmd_recall(ctx, argparse.Namespace(text=extra, file=None, paths=None, top=None, json=False, record=True))
     extra += f"\n仓库根目录：{ctx.root}\n变更目录：{d}\n召回结果：{d / 'recalled.json'}\n"
+    if a.role == "scout" and (ctx.ai / "kb" / "index.md").exists():
+        extra += f"知识库索引：{ctx.ai / 'kb' / 'index.md'}（先读索引和下面召回的页，再查代码；页里的 file:line 仍要打开核对）\n"
+        extra += "知识库召回：\n" + kb.recall_text(kb.recall_pages(ctx, extra, [], 5))
     out = (Path(a.out) if Path(a.out).is_absolute() else Path.cwd() / a.out) if a.out else d / f"{a.role}.out.md"
     res = run_role(ctx, a.role, a.host, a.engine, a.model, a.reasoning, role_prompt(a.role, extra),
                    out, a.timeout)
@@ -1172,6 +1180,17 @@ def main():
     s = sub.add_parser("specs", help="spec 库维护")
     s.add_argument("action", choices=("lint", "report"))
 
+    s = sub.add_parser("kb", help="代码知识库：scan / plan / draft / facts / lint / freeze / status / recall")
+    s.add_argument("action", choices=("scan", "plan", "draft", "facts", "lint", "freeze", "status", "recall"))
+    s.add_argument("--page", help="draft / facts：页 id")
+    s.add_argument("--all", action="store_true", help="draft：处理 plan 里所有待写的页")
+    s.add_argument("--force", action="store_true", help="draft：覆盖已有页（protected 页除外，kb:manual 块保留）")
+    s.add_argument("--text", help="recall：需求文本")
+    s.add_argument("--file", action="append", help="recall：需求文件")
+    s.add_argument("--paths", nargs="*", help="recall：涉及路径")
+    s.add_argument("--top", type=int, help="recall：最多返回几页，默认 5")
+    s.add_argument("--json", action="store_true")
+
     s = sub.add_parser("snapshot", help="给任务打快照：base（开工前）、v1（AI 首版）、final（任务验收）")
     s.add_argument("task")
     s.add_argument("phase", choices=PHASES)
@@ -1238,7 +1257,9 @@ def main():
         "incident": cmd_incident_new,
         "verify": lambda c, x: (cmd_verify_start if x.vcmd == "start" else cmd_verify_record)(c, x),
         "specs": lambda c, x: (cmd_specs_lint if x.action == "lint" else cmd_specs_report)(c, x),
+        "kb": kb.dispatch,
     }
+    kb.bind(sys.modules[__name__])
     handlers[a.cmd](ctx, a)
 
 

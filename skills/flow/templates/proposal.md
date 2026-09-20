@@ -27,6 +27,10 @@
 
 > AI 召回的候选在下面，人工勾掉无关的、补上漏的。只有勾上的才会进入后续步骤。
 
+### 知识库页
+
+<!-- flowctl kb recall 与 scout 用到的 .ai/kb/ 页，格式：- [x] .ai/kb/modules/<模块>.md — 用到哪一节；没有知识库写「无知识库」 -->
+
 ### spec
 
 <!-- flowctl recall 的结果，格式：- [x] <spec-id> — 为什么相关 -->

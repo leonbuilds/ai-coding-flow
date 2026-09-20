@@ -122,11 +122,15 @@ rm <这个任务新建的文件…>
 只要仓库里没有 `.ai/`，`/flow` 就会路由到这里——不管仓库里已经有没有 `CLAUDE.md`/`AGENTS.md`，都不应该绕过这一步直接跑 `flowctl init`。做的事：
 
 1. 问 `.ai/` 要不要提交进仓库：`flowctl init`（推荐）或 `flowctl init --local-only`（加进 `.git/info/exclude`，只留本地）。
-2. 只读探索代码库：技术栈版本、目录分层、构建/测试的确切命令（能跑就实际跑一次）、仓库特殊约定、明显禁区。
-3. 写仓库规则文件（`CLAUDE.md` 或 `AGENTS.md`，参考 `rules/project-template.md`），只写 AI 从代码里读不出来的东西；已有规则文件时只补充不覆盖。
-4. 起草 3–8 条 `status: draft` 的 spec，必须写 `when` 以及 `triggers` 或 `paths`。
+2. 按 `/flow-kb` 生成代码知识库 `.ai/kb/`：`flowctl kb scan` 抽事实 → `flowctl kb plan` 规划页面（门禁）→ `flowctl kb draft --all` → 逐页写作（每条带 `file:line`）→ `flowctl kb lint` 零错误 → `flowctl kb freeze`（见 [10-code-kb.md](10-code-kb.md)）。
+3. 写仓库规则文件（`CLAUDE.md` 或 `AGENTS.md`，参考 `rules/project-template.md`），以 `.ai/kb/overview.md` 为素材，只写 AI 从代码里读不出来的东西，并指向 `.ai/kb/index.md`；已有规则文件时只补充不覆盖。
+4. 起草 3–8 条 `status: draft` 的 spec，必须写 `when` 以及 `triggers` 或 `paths`；分层与依赖规则从 `.ai/kb/architecture.md` 起草。
 5. `flowctl specs lint` 零错误。
 6. **人工门禁**：逐条确认规则文件和 spec，确认过的 spec 改成 `active`。
+
+### /flow-kb（代码知识库）
+
+有 `.ai/` 但没有 `.ai/kb/_manifest.json` 时 `/flow` 路由到这里；之后代码漂移（`flowctl status` 或 `/flow-retro` 第 6 步的 `flowctl kb status` 退出码 10）时再进来只刷新过期页。细节见 [10-code-kb.md](10-code-kb.md)。
 
 ### /flow-incident（线上反哺）
 

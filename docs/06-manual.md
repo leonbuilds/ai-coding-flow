@@ -38,7 +38,7 @@ make demo-codex MODEL=gpt-5.6-luna REASONING=low      # 审查用真实 Codex
 
 ## 接入一个仓库（每个仓库一次）
 
-对 AI 说 `/flow-onboard`。它会问 `.ai/` 要不要提交进这个仓库，探索代码库，生成规则文件和 spec 草稿，你逐条确认。详见 [02-pipeline.md](02-pipeline.md#flow-onboard-接入)。
+对 AI 说 `/flow-onboard`。它会问 `.ai/` 要不要提交进这个仓库，按 `/flow-kb` 生成代码知识库（你确认页面规划、抽查页面），再生成规则文件和 spec 草稿，你逐条确认。详见 [02-pipeline.md](02-pipeline.md#flow-onboard-接入)。
 
 ## 日常场景
 

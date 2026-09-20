@@ -15,9 +15,9 @@
 | 工作台 | 唯一真相源，同步到 `~/.claude` 和 `~/.codex`，并检查漂移（个人版 AiBox） | `workbench/wb.py` |
 | 规则 | 全局规则（受管区块）、仓库规则模板 | `rules/` |
 | 场景手册 | 读代码、加字段接口、修 bug、补单测、CR | `playbooks/` |
-| 流程 | 9 个 skill：`/flow` 入口、`onboard`、`propose`、`design`、`tasks`、`build`、`review`、`retro`、`incident` | `skills/` |
+| 流程 | 10 个 skill：`/flow` 入口、`onboard`、`kb`、`propose`、`design`、`tasks`、`build`、`review`、`retro`、`incident` | `skills/` |
 | 角色 | `flow-scout`（召回上下文）、`flow-verifier`（独立审查），两端共用同一份定义 | `agents/` |
-| 工具 | `flowctl`：状态、spec 召回与打分、快照、度量、审查调度、合入后追踪、问题定位 | `skills/flow/scripts/flowctl.py` |
+| 工具 | `flowctl`：状态、spec 召回与打分、快照、度量、审查调度、合入后追踪、问题定位；`flowctl kb`：代码知识库的扫描、规划、校验、漂移检测、召回（Java / Go / Python） | `skills/flow/scripts/flowctl.py`、`kb.py` |
 
 只依赖 Python 3.9+ 标准库和 git。
 
@@ -76,6 +76,8 @@ F="$HOME/.ai-flow/bin/flowctl"
 "$F" status               # 当前进度和下一步
 "$F" report               # 所有变更的 FPY、AI 代码占比、采纳率、审查级别
 "$F" specs report         # spec 命中率、误导率，以及修订或下架建议
+"$F" kb status            # 代码知识库是否过期（退出码 10 = 有页过期，跑 /flow-kb）
+"$F" kb recall --text "订单导出"   # 需求相关的知识库页
 "$F" aftercare <变更>      # 合入几周后：AI 代码存活率、后续改动
 "$F" locate <文件>:<行>    # 这一行来自哪个变更档案
 ```
