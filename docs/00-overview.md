@@ -81,7 +81,7 @@ ai-coding-flow/
 │   └── project-template.md         仓库级规则模板，flow-onboard 用
 ├── playbooks/                      场景手册：read-code / add-field-api / bugfix / unit-test / code-review
 ├── skills/
-│   ├── flow/                       入口 skill + flowctl.py + kb.py + 6 个产线模板 + templates/kb/ 7 个知识库页模板
+│   ├── flow/                       入口 skill + flowctl.py + kb.py + 6 个产线模板 + templates/kb/ 5 个知识库页模板
 │   ├── flow-onboard/ flow-kb/ flow-propose/ flow-design/ flow-tasks/
 │   ├── flow-build/ flow-review/ flow-retro/ flow-incident/
 ├── agents/

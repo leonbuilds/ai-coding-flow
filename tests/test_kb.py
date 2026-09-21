@@ -135,18 +135,22 @@ public class UserService {
         pp = self.repo / ".ai" / "kb" / "plan.json"
         plan = json.loads(pp.read_text())
         ids = [p["id"] for p in plan["pages"]]
-        self.assertEqual(ids[:5], ["overview", "architecture", "interfaces", "data-model", "glossary"])
-        self.assertIn("module-order", ids)
+        # order 有 4 个入口 + 1 个模型 → 单独开页；user 没有入口 → 并入 modules.md
+        self.assertEqual(ids, ["overview", "architecture", "modules", "module-order"])
+        by0 = {p["id"]: p for p in plan["pages"]}
+        self.assertEqual(by0["modules"]["modules"], ["user"])
+        self.assertEqual(plan["limits"]["max_module_pages"], 6)
+        self.assertLessEqual(len(by0["module-order"]["sources"]), 30)
         self.assertTrue(all(p["status"] == "planned" for p in plan["pages"]))
         plan["notes"].append("只关注 order")
         plan["scope"]["exclude"] = ["**/Gbk.java"]
         for p in plan["pages"]:
-            if p["id"] == "module-user":
-                p["status"] = "removed"
             if p["id"] == "module-order":
                 p["goal"] = "自定义目标"
+        plan["limits"]["min_entries"] = 1  # 门槛降到 1：pay 的一个 HTTP 入口也够开页
+        plan["pages"].append({"id": "module-user", "kind": "module", "status": "planned"})  # 用户强制给 user 开页
         pp.write_text(json.dumps(plan, ensure_ascii=False))
-        self.write(JAVA_BASE + "pay/PayService.java", "package com.acme.shop.pay;\npublic class PayService {}\n")
+        self.write(JAVA_BASE + "pay/PayController.java", "package com.acme.shop.pay;\n@RestController\npublic class PayController {\n    @PostMapping(\"/pay\")\n    public void pay() {}\n}\n")
         self.commit("pay")
         self.scan()
         self.f("kb", "plan")
@@ -154,9 +158,17 @@ public class UserService {
         by = {p["id"]: p for p in plan["pages"]}
         self.assertEqual(plan["notes"], ["只关注 order"])
         self.assertEqual(plan["scope"]["exclude"], ["**/Gbk.java"])
-        self.assertEqual(by["module-user"]["status"], "removed")
         self.assertEqual(by["module-order"]["goal"], "自定义目标")
         self.assertEqual(by["module-pay"]["status"], "proposed")
+        self.assertEqual(by["module-user"]["status"], "planned")
+        self.assertEqual(by["module-user"]["path"], "modules/user.md")
+        self.assertEqual(by["modules"]["modules"], [])
+        by["module-user"]["status"] = "removed"
+        pp.write_text(json.dumps(plan, ensure_ascii=False))
+        self.f("kb", "plan")
+        by = {p["id"]: p for p in json.loads(pp.read_text())["pages"]}
+        self.assertEqual(by["module-user"]["status"], "removed")
+        self.assertEqual(by["modules"]["modules"], ["user"])
         s = json.loads((self.repo / ".ai" / "kb" / "scan.json").read_text())
         self.assertNotIn(JAVA_BASE + "user/Gbk.java", [f for m in s["modules"] for f in m["file_list"]])
 
@@ -180,6 +192,9 @@ public class UserService {
         kb = self.repo / ".ai" / "kb"
         order = kb / "modules" / "order.md"
         self.assertTrue(order.exists())
+        self.assertFalse((kb / "modules" / "user.md").exists())
+        self.assertTrue((kb / "modules.md").exists())
+        self.assertIn("user", (kb / "modules.md").read_text())
         head = order.read_text().split("---")[1]
         self.assertIn("module: order", head)
         self.assertIn('"order"', head)
@@ -204,6 +219,7 @@ public class UserService {
         idx = (kb / "index.md").read_text()
         self.assertIn("[module-order](modules/order.md)", idx)
         self.assertIn("| order 一句话 |", idx)
+        self.assertIn("modules.md", idx)
         man = json.loads((kb / "_manifest.json").read_text())
         self.assertIn(JAVA_BASE + "order/OrderController.java", man["pages"]["module-order"]["sources"])
         r = self.f("kb", "status", ok=False)
@@ -219,13 +235,13 @@ public class UserService {
         self.commit("touch")
         self.assertEqual(self.f("kb", "status", ok=False).returncode, 10)
         # 手改与保护：protected 页不被 --force 覆盖；非 protected 页保留 manual 块
-        user = kb / "modules" / "user.md"
-        user.write_text(user.read_text().replace("protected: false", "protected: true"))
-        before = user.read_text()
+        arch = kb / "architecture.md"
+        arch.write_text(arch.read_text().replace("protected: false", "protected: true"))
+        before = arch.read_text()
         self.f("kb", "scan")
-        r = self.f("kb", "draft", "--force", "--page", "module-user")
+        r = self.f("kb", "draft", "--force", "--page", "architecture")
         self.assertIn("protected", r.stdout)
-        self.assertEqual(user.read_text(), before)
+        self.assertEqual(arch.read_text(), before)
         self.f("kb", "draft", "--force", "--page", "module-order")
         t = order.read_text()
         self.assertIn("手写的说明", t)
@@ -236,7 +252,7 @@ public class UserService {
         res = json.loads(r.stdout)
         self.assertEqual(res[0]["id"], "module-order")
         r = self.f("kb", "recall", "--paths", JAVA_BASE + "user/UserService.java", "--json")
-        self.assertEqual(json.loads(r.stdout)[0]["id"], "module-user")
+        self.assertEqual(json.loads(r.stdout)[0]["id"], "modules")  # user 并在 modules.md 里，按目录 glob 命中
 
     def test_agent_scout_gets_kb(self):
         self.scan()
@@ -281,7 +297,7 @@ type Order struct {
 
 func (Order) TableName() string { return "orders" }
 """)
-        self.write("internal/order/service.go", "package order\n\nimport \"net/http\"\n\nfunc Get() { http.Get(\"http://x\") }\nfunc Create() {}\n")
+        self.write("internal/order/service.go", "package order\n\nimport \"net/http\"\n\nfunc Get(r *http.Request) { http.Get(\"http://x\"); _ = r.Header.Get(\"Content-Type\"); bus.Subscribe(\"x\") }\nfunc Create() {}\n")
         self.write("internal/order/service_test.go", "package order\n\nimport \"testing\"\n\nfunc TestGet(t *testing.T) {}\n")
         self.write(".golangci.yml", "run: {}\n")
         self.commit("go")
@@ -301,6 +317,7 @@ func (Order) TableName() string { return "orders" }
         self.assertEqual(ents["GET /orders/:id"]["detail"]["handler"], "order.Get")
         self.assertEqual(ents["GET /orders/:id"]["detail"]["framework"], "gin")
         self.assertEqual(ents["main"]["module"], "cmd/api")
+        self.assertEqual(sorted(e["kind"] for e in s["entries"]), ["http", "http", "main"])  # Header.Get / Subscribe 不算入口
         m = s["models"][0]
         self.assertEqual((m["name"], m["detail"]["table"], m["module"]), ("Order", "orders", "internal/order"))
         self.assertEqual(s["edges"], [{"from": "cmd/api", "to": "internal/order", "count": 1}])
