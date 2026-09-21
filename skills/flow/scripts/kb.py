@@ -5,8 +5,8 @@
 
   .ai/kb/scan.json        kb scan 的事实（每条带 file:line）
   .ai/kb/plan.json        页面规划（用户可编辑）
-  .ai/kb/*.md、modules/   知识库页（frontmatter + 正文）
-  .ai/kb/index.md         路由索引（kb freeze 生成）
+  .ai/kb/ai-quick-reference.md、architecture/*.md、modules/*.md、domains/*/*.md   知识库页（frontmatter + 正文）
+  .ai/kb/README.md 及各层 README.md   导航（kb freeze 生成）
   .ai/kb/_manifest.json   冻结基线（commit、每页 sources 与内容 hash）
 
 由 flowctl.py 通过 bind() 注入 git / die / glob_match / trigger_hit / parse_frontmatter 等公共函数。
@@ -37,12 +37,7 @@ SKIP_SEGS = {"vendor", "node_modules", "target", "build", "dist", ".venv", "venv
 MAX_SIZE = 1024 * 1024
 LAYER_WORDS = {"controller", "web", "api", "service", "biz", "repository", "dao", "mapper", "model",
                "entity", "domain", "dto", "vo", "config", "util", "common", "infra"}
-FIXED_PAGES = ("overview", "architecture", "modules")
-LEGACY_KINDS = ("interfaces", "data-model", "glossary")  # 旧版拆出来的页，现已并入 architecture / overview
-PAGE_KINDS = FIXED_PAGES + ("module",) + LEGACY_KINDS
 REAL_ENTRY_KINDS = {"http", "rpc", "mq", "schedule", "event", "cli", "external-callback"}  # main 不算对外入口
-DEFAULT_LIMITS = {"max_module_pages": 6, "min_entries": 3, "min_models": 3, "max_sources": 30}
-FACT_CAP = 25
 TODO = "<!-- kb:todo -->"
 MANUAL_OPEN, MANUAL_CLOSE = "<!-- kb:manual -->", "<!-- /kb:manual -->"
 CONFIG_PATTERNS = ["**/application*.yml", "**/application*.yaml", "**/application*.properties",
@@ -770,8 +765,13 @@ def go_entries(rel, text):
     out, lines = [], text.splitlines()
     fw = go_framework(text)
     has_mq, has_cron = bool(GO_MQ_IMPORT_RX.search(text)), bool(GO_CRON_IMPORT_RX.search(text))
+    prefix = {}  # 路由组变量 → 路径前缀
     for i, line in enumerate(lines):
         s = line.strip()
+        mg = re.match(r"(\w+)\s*:?=\s*(\w+)\.Group\s*\(\s*\"([^\"]*)\"", s)
+        if mg:
+            prefix[mg.group(1)] = prefix.get(mg.group(2), "") + mg.group(3)
+            continue
         if re.match(r"^func\s+main\s*\(\s*\)", s):
             out.append({"kind": "main", "name": "main", "file": rel, "line": i + 1, "detail": {}})
             continue
@@ -788,8 +788,9 @@ def go_entries(rel, text):
             if method == "GROUP":
                 continue
             hm = re.search(r",\s*([\w.]+)\s*\)?\s*$", s)
-            out.append({"kind": "http", "name": f"{method} {m.group(3)}", "file": rel, "line": i + 1,
-                        "detail": {"method": method, "path": m.group(3), "handler": hm.group(1) if hm else None,
+            full = prefix.get(m.group(1), "") + m.group(3)
+            out.append({"kind": "http", "name": f"{method} {full}", "file": rel, "line": i + 1,
+                        "detail": {"method": method, "path": full, "handler": hm.group(1) if hm else None,
                                    "framework": fw}})
             continue
         m = re.search(r"\bRegister(\w+)Server\s*\(", s)
@@ -1079,7 +1080,7 @@ def cmd_scan(ctx, a):
     edges, cycles = build_edges(files, fmod, modules, imports, build, texts)
     configs = detect_configs(files, fmod, modules)
     for f in entries:
-        if f["module"] in modules:
+        if f["module"] in modules and f["kind"] in REAL_ENTRY_KINDS:
             modules[f["module"]]["entries"] += 1
     for f in models:
         if f["module"] in modules:
@@ -1159,8 +1160,52 @@ def need_scan(ctx):
     return s
 
 
-def real_entries(scan, mid):
-    return [e for e in scan["entries"] if e["module"] == mid and e["kind"] in REAL_ENTRY_KINDS]
+# ---------------------------------------------------------------- 页面模型：三层（architecture / modules / domains）+ 速查
+
+# kind → (相对路径模板, 标题, 一句话目标, 是否必须有 mermaid 图)
+ARCH_PAGES = [
+    ("arch-overview", "architecture/overview.md", "系统架构总览", "系统边界、核心模块、关键链路、系统架构图", True),
+    ("business-flows", "architecture/business-flows.md", "业务主链路与旁路", "每条链路一张流程图，标出经过的模块与关键代码位置", True),
+    ("module-dependencies", "architecture/module-dependencies.md", "模块依赖关系", "模块依赖图、依赖边表、循环依赖与排查顺序", True),
+    ("interfaces", "architecture/interfaces.md", "对外入口总览", "HTTP / RPC / MQ / 定时 / CLI 按模块分组，代表性入口与数量", False),
+    ("data-model", "architecture/data-model.md", "数据模型", "核心实体与表、实体关系图、新增场景要配哪些表", True),
+    ("tech-stack", "architecture/tech-stack.md", "技术栈与基础设施", "语言、框架、中间件客户端及版本，以 manifest 为准", False),
+    ("config-and-dependencies", "architecture/config-and-dependencies.md", "配置与外部依赖", "配置文件路径、外部系统调用、存储与中间件", False),
+    ("patterns", "architecture/patterns.md", "横切机制与协作模式", "错误处理、日志、鉴权、事务、配置加载各怎么做", False),
+    ("domain-concepts", "architecture/domain-concepts.md", "跨模块术语与易混概念", "项目黑话、缩写、和字面不一致的命名", False),
+    ("dev-guide", "architecture/dev-guide.md", "开发与排查指引", "构建 / 测试 / lint 命令，加接口、加字段的落点，排查顺序", False),
+]
+DOMAIN_SUBPAGES = [("domain", "README.md", "业务域 SDD", True), ("domain-flow", "核心流程.md", "核心流程摘要", True),
+                   ("domain-terms", "术语梳理.md", "术语梳理", False), ("domain-config", "配置清单.md", "配置清单", False)]
+DIAGRAM_REQUIRED = {k for k, _, _, _, d in ARCH_PAGES if d} | {k for k, _, _, d in DOMAIN_SUBPAGES if d}
+PAGE_KINDS = ("quickref",) + tuple(k for k, *_ in ARCH_PAGES) + ("module",) + tuple(k for k, *_ in DOMAIN_SUBPAGES)
+LEGACY_KINDS = ("overview", "architecture", "modules", "glossary")  # 更早版本的页，lint 只提示
+README_NAMES = ("README.md", "index.md")  # 自动生成的导航页，不参与 lint / 召回
+LINE_LIMITS = {"module": 110, "domain": 220, "domain-flow": 130, "quickref": 130}
+DEFAULT_LIMITS = {"max_module_pages": 20, "max_domains": 4, "min_domain_entries": 2, "max_sources": 30}
+FACT_CAP = 25
+
+
+def page_id_for(rel):
+    """由路径推出 id：architecture/overview.md → arch-overview；modules/x.md → module-x；domains/d/README.md → domain-d。"""
+    parts = rel[:-3].split("/") if rel.endswith(".md") else rel.split("/")
+    if parts[0] == "architecture" and len(parts) == 2:
+        return "arch-overview" if parts[1] == "overview" else parts[1]
+    if parts[0] == "modules" and len(parts) == 2:
+        return "module-" + parts[1]
+    if parts[0] == "domains" and len(parts) == 3:
+        sub = {"README": "", "核心流程": "-flow", "术语梳理": "-terms", "配置清单": "-config"}.get(parts[2], "-" + parts[2])
+        return f"domain-{parts[1]}{sub}"
+    return "-".join(parts)
+
+
+def slugify(s):
+    s = re.sub(r"[^\w.\-]+", "-", s.strip()).strip("-.").lower()
+    return s or "x"
+
+
+def real_entries(scan, mid=None):
+    return [e for e in scan["entries"] if e["kind"] in REAL_ENTRY_KINDS and (mid is None or e["module"] == mid)]
 
 
 def _module_page(m, scan, limits):
@@ -1183,35 +1228,89 @@ def _module_page(m, scan, limits):
     users = sorted({e["from"] for e in scan["edges"] if e["to"] == mid})
     if users:
         hints.append("被依赖 " + "、".join(users))
-    safe = re.sub(r"[^\w.\-]+", "-", mid).strip("-")
-    return {"id": f"module-{safe}", "kind": "module", "module": mid, "path": f"modules/{safe}.md",
-            "goal": f"{m['name']}：职责、关键入口、核心类型、上下游", "hints": hints,
-            "score": len(ents) + 2 * len(mods), "entries": len(ents), "models": len(mods),
+    safe = slugify(mid)
+    return {"id": f"module-{safe}", "kind": "module", "module": mid, "path": f"modules/{safe}.md", "name": m["name"],
+            "goal": f"{m['name']}：模块信息、职责、关键入口、核心类型、上下游、配置与风险", "hints": hints,
+            "entries": len(ents), "models": len(mods), "files": m["files"],
             "sources": sources[:cap], "sources_truncated": len(sources) > cap,
             "paths": [d + "/**" if d != "." else "*" for d in m["dirs"]], "status": "planned"}
 
 
-def _fixed_pages(scan, merged, limits):
-    """overview / architecture / modules 三页；merged 是没有单独开页的模块清单。"""
+def _entry_group(e):
+    """把入口归到业务组：HTTP 按去掉 /api/vN 后的首段；CLI 按命令首词；MQ 按 topic；定时归 jobs。"""
+    d = e["detail"]
+    if e["kind"] == "http":
+        path = re.sub(r"^(/api)?(/v\d+)?", "", d.get("path") or "")
+        segs = [s for s in path.split("/") if s and not s.startswith((":", "{", "*")) and not re.fullmatch(r"v\d+|api|internal|public", s)]
+        return ("http", segs[0]) if segs else None
+    if e["kind"] == "cli":
+        return ("cli", (e["name"] or "cli").split()[0])
+    if e["kind"] == "mq":
+        return ("mq", (d.get("topics") or [e["name"]])[0])
+    if e["kind"] == "schedule":
+        return ("schedule", "jobs")
+    if e["kind"] == "rpc":
+        return ("rpc", e["name"])
+    return None
+
+
+def domain_candidates(scan, limits):
+    groups = defaultdict(list)
+    for e in real_entries(scan):
+        g = _entry_group(e)
+        if g:
+            groups[g].append(e)
+    ranked = sorted(groups.items(), key=lambda kv: (-len(kv[1]), kv[0]))
+    out = []
+    for (kind, key), ents in ranked:
+        if len(ents) < limits["min_domain_entries"] or len(out) >= limits["max_domains"]:
+            break
+        out.append(_domain_spec(slugify(key), key, ents, scan, limits, kind))
+    return out
+
+
+def _domain_spec(slug, name, ents, scan, limits, kind="http"):
+    mods = sorted({e["module"] for e in ents if e["module"]})
+    files = list(dict.fromkeys(e["file"] for e in ents))
+    cap = limits.get("max_sources", DEFAULT_LIMITS["max_sources"])
+    dirs = sorted({d for m in scan["modules"] if m["id"] in mods for d in m["dirs"]})
+    return {"slug": slug, "name": name, "group": kind, "entries": len(ents), "modules": mods,
+            "sample": [e["name"] for e in ents[:5]], "sources": files[:cap], "paths": [d + "/**" if d != "." else "*" for d in dirs]}
+
+
+def _domain_pages(spec):
+    pages = []
+    for kind, fname, title, _ in DOMAIN_SUBPAGES:
+        suffix = {"domain": "", "domain-flow": "-flow", "domain-terms": "-terms", "domain-config": "-config"}[kind]
+        pages.append({"id": f"domain-{spec['slug']}{suffix}", "kind": kind, "domain": spec["slug"], "name": spec["name"],
+                      "path": f"domains/{spec['slug']}/{fname}", "goal": f"{spec['name']}：{title}",
+                      "hints": [f"{spec['entries']} 个入口（{spec['group']}），涉及模块 {', '.join(spec['modules']) or '待确认'}",
+                                "代表入口 " + "、".join(spec["sample"])],
+                      "modules": spec["modules"], "sources": spec["sources"] if kind in ("domain", "domain-flow") else [],
+                      "paths": spec["paths"], "status": "planned"})
+    return pages
+
+
+def _fixed_pages(scan, limits):
     man = [m["file"] for m in scan["build"]["manifests"]]
     cfg = [c["file"] for c in scan["configs"]][:20]
     all_dirs = sorted({d for m in scan["modules"] for d in m["dirs"]})
-    merged_dirs = sorted({d for m in scan["modules"] if m["id"] in merged for d in m["dirs"]})
-    ent_files = list(dict.fromkeys(e["file"] for e in scan["entries"] if e["kind"] in REAL_ENTRY_KINDS))
+    all_paths = [d + "/**" if d != "." else "*" for d in all_dirs]
+    ent_files = list(dict.fromkeys(e["file"] for e in real_entries(scan)))
     mod_files = list(dict.fromkeys(x["file"] for x in scan["models"]))
+    ext_files = list(dict.fromkeys(x["file"] for x in scan["externals"]))
     cap = limits.get("max_sources", DEFAULT_LIMITS["max_sources"])
-    return [
-        {"id": "overview", "kind": "overview", "path": "overview.md",
-         "goal": "一句话、技术栈与版本、构建测试命令、目录地图、术语", "sources": man + cfg,
-         "paths": ["*"] + [d + "/**" for d in all_dirs if "/" not in d], "status": "planned"},
-        {"id": "architecture", "kind": "architecture", "path": "architecture.md",
-         "goal": "分层与依赖方向、模块依赖图、入口总览、数据模型总览、横切机制",
-         "sources": (man + ent_files + mod_files)[:cap], "paths": [d + "/**" if d != "." else "*" for d in all_dirs],
-         "status": "planned"},
-        {"id": "modules", "kind": "modules", "path": "modules.md", "modules": merged,
-         "goal": "没有单独开页的模块，每个一节：职责、目录、入口、依赖", "sources": [],
-         "paths": [d + "/**" if d != "." else "*" for d in merged_dirs], "status": "planned"},
-    ]
+    src = {"arch-overview": man, "business-flows": ent_files, "module-dependencies": man, "interfaces": ent_files,
+           "data-model": mod_files, "tech-stack": man, "config-and-dependencies": cfg + ext_files, "patterns": [],
+           "domain-concepts": mod_files, "dev-guide": man}
+    pages = [{"id": "ai-quick-reference", "kind": "quickref", "path": "ai-quick-reference.md", "name": "AI 快速参考",
+              "goal": "三句话理解系统、按问题找文档、模块速查、检索顺序、边界提醒", "sources": man, "paths": ["*"], "status": "planned"}]
+    for kind, path, title, goal, _ in ARCH_PAGES:
+        pid = "arch-overview" if kind == "arch-overview" else kind
+        pages.append({"id": pid, "kind": kind, "path": path, "name": title, "goal": goal, "sources": src[kind][:cap],
+                      "paths": all_paths if kind in ("arch-overview", "business-flows", "module-dependencies", "dev-guide") else
+                      ["*"] if kind in ("tech-stack",) else all_paths, "status": "planned"})
+    return pages
 
 
 def cmd_plan(ctx, a):
@@ -1221,16 +1320,21 @@ def cmd_plan(ctx, a):
     old = load_json(pp, {})
     limits = dict(DEFAULT_LIMITS, **(old.get("limits") or {}))
     old_pages = {p["id"]: p for p in old.get("pages", [])}
-    # 按入口 / 模型数量决定哪些模块单独开页
-    cands = [_module_page(m, scan, limits) for m in scan["modules"] if m["files"] > 0]
-    by_id = {c["id"]: c for c in cands}
-    forced = {pid for pid, o in old_pages.items() if o.get("kind") == "module" and o.get("status") in ("planned", "proposed")}
-    eligible = [c for c in cands if c["entries"] >= limits["min_entries"] or c["models"] >= limits["min_models"]]
-    eligible.sort(key=lambda c: (-c["score"], c["id"]))
-    chosen = [c["id"] for c in eligible[: limits["max_module_pages"]]]
-    chosen += [pid for pid in forced if pid in by_id and pid not in chosen and old_pages[pid].get("status") != "removed"]
-    merged = [c["module"] for c in cands if c["id"] not in chosen or old_pages.get(c["id"], {}).get("status") == "removed"]
-    fresh = _fixed_pages(scan, merged, limits) + [by_id[i] for i in chosen]
+    # 模块页：全部模块（按文件数排序，超出 max_module_pages 的并不生成）
+    mods = sorted((m for m in scan["modules"] if m["files"] > 0), key=lambda m: (-m["files"], m["id"]))
+    module_pages = [_module_page(m, scan, limits) for m in mods[: limits["max_module_pages"]]]
+    # 业务域：scan 推荐 + 用户在 plan.json 里手加的（{"id":"domain-x","kind":"domain","name":"x"}）
+    specs = {d["slug"]: d for d in domain_candidates(scan, limits)}
+    for pid, o in old_pages.items():
+        if o.get("kind") == "domain" and o.get("status") in ("planned", "proposed"):
+            slug = o.get("domain") or pid[len("domain-"):]
+            if slug not in specs:
+                ents = [e for e in real_entries(scan) if e["module"] in (o.get("modules") or [])]
+                specs[slug] = _domain_spec(slug, o.get("name") or slug, ents, scan, limits, "manual")
+            else:
+                specs[slug]["name"] = o.get("name") or specs[slug]["name"]
+    domain_pages = [p for slug in specs for p in _domain_pages(specs[slug])]
+    fresh = _fixed_pages(scan, limits) + module_pages + domain_pages
     pages = []
     for p in fresh:
         o = old_pages.pop(p["id"], None)
@@ -1238,7 +1342,8 @@ def cmd_plan(ctx, a):
             if o.get("status") == "removed":
                 pages.append(o)
                 continue
-            for k in ("goal", "hints", "paths", "status"):
+            keep = ("goal", "hints", "paths", "status", "name") if not p["kind"].startswith("domain-") else ("hints", "paths", "status")
+            for k in keep:  # 域子页的 name / goal 跟随 README 那条
                 if k in o:
                     p[k] = o[k]
             if p.get("status") == "orphan":
@@ -1246,29 +1351,40 @@ def cmd_plan(ctx, a):
         elif old.get("pages"):
             p["status"] = "proposed"
         pages.append(p)
-    for o in old_pages.values():  # scan 里不再出现、或这次没入选的
+    for o in old_pages.values():  # scan 里不再出现的
         if o.get("status") != "removed":
             o["status"] = "orphan"
         pages.append(o)
-    plan = {"version": 2, "tier": scan["tier"], "generated_at": F.now(), "limits": limits,
+    # 某个域的 README 被标 removed，其子页一并跟随
+    removed_domains = {p.get("domain") for p in pages if p.get("kind") == "domain" and p.get("status") == "removed"}
+    for p in pages:
+        if p.get("kind", "").startswith("domain-") and p.get("domain") in removed_domains:
+            p["status"] = "removed"
+    plan = {"version": 3, "tier": scan["tier"], "generated_at": F.now(), "limits": limits,
             "scope": old.get("scope") or {"include": [], "exclude": []}, "notes": old.get("notes") or [], "pages": pages}
     dump(pp, plan)
     if a.json:
         print(json.dumps(plan, ensure_ascii=False, indent=2))
         return
-    print(f"页面规划（{scan['tier']}）：写入 .ai/kb/plan.json；模块页上限 {limits['max_module_pages']}，"
-          f"入口 ≥ {limits['min_entries']} 或模型 ≥ {limits['min_models']} 的模块才单独开页")
-    print(f"{'id':<28}{'kind':<13}{'module':<22}{'入口':>5}{'模型':>5}  {'status':<9} goal")
+    active = [p for p in pages if p["status"] != "removed"]
+    n_mod = sum(1 for p in active if p["kind"] == "module")
+    n_dom = sum(1 for p in active if p["kind"] == "domain")
+    print(f"页面规划（{scan['tier']}）：写入 .ai/kb/plan.json —— 速查 1 + 架构 {len(ARCH_PAGES)} + 模块 {n_mod} + 业务域 {n_dom}×4 页，另有 4 个自动生成的 README")
+    print(f"{'id':<34}{'kind':<20}{'对象':<24}{'入口':>5}  {'status':<9} goal")
     for p in pages:
-        print(f"{p['id']:<28}{p['kind']:<13}{p.get('module', ''):<22}{p.get('entries', ''):>5}{p.get('models', ''):>5}  {p['status']:<9} {p.get('goal', '')}")
-    if merged:
-        print("并入 modules.md 的模块：" + "、".join(merged))
+        obj = p.get("module") or p.get("name", "") if p["kind"] != "quickref" else ""
+        print(f"{p['id']:<34}{p['kind']:<20}{str(obj)[:23]:<24}{p.get('entries', ''):>5}  {p['status']:<9} {p.get('goal', '')[:60]}")
+    if specs:
+        print("业务域候选（按入口分组推荐，请改名、合并或删除）：" + "；".join(
+            f"{s['name']}（{s['entries']} 个 {s['group']} 入口，模块 {'/'.join(s['modules'][:3])}）" for s in specs.values()))
     extra = [pg.rel for pg in load_pages(ctx) if pg.rel not in {p["path"] for p in pages}]
     if extra:
-        print("不在规划内的已有页（旧版拆分页或已并入 modules.md）：" + "、".join(extra) + "  → 删除，或把有用内容并进对应页后删除")
-    print("编辑 plan.json 后重跑 flowctl kb plan：limits 调页数与门槛；scope 缩小扫描范围；status 改 removed 删页，proposed/orphan 需确认。")
+        print("不在规划内的已有页：" + "、".join(extra) + "  → 删除，或把有用内容并进对应页后删除")
+    print("编辑 plan.json 后重跑 flowctl kb plan：limits 调页数；scope 缩小范围；status 改 removed 删页；domain 页改 name 即改域名；proposed/orphan 需确认。")
     print("下一步：flowctl kb draft --all")
 
+
+# ---------------------------------------------------------------- 命令：draft / facts
 
 def _yaml_list(items):
     return "[" + ", ".join('"' + str(x).replace('"', "'") + '"' for x in items) + "]"
@@ -1281,11 +1397,22 @@ def load_plan(ctx):
     return p
 
 
+KIND_TRIGGERS = {
+    "quickref": ["速查", "入口", "哪里", "怎么找"], "arch-overview": ["架构", "总览", "边界", "链路"],
+    "business-flows": ["流程", "链路", "主链", "旁路", "flow"], "module-dependencies": ["依赖", "调用", "循环依赖", "排查"],
+    "interfaces": ["接口", "入口", "api", "路由", "endpoint", "消费", "定时", "命令"], "data-model": ["表", "实体", "模型", "字段", "schema", "entity"],
+    "tech-stack": ["技术栈", "版本", "框架", "依赖"], "config-and-dependencies": ["配置", "外部", "中间件", "存储", "config"],
+    "patterns": ["错误处理", "日志", "鉴权", "事务", "横切"], "domain-concepts": ["术语", "缩写", "概念"],
+    "dev-guide": ["构建", "测试", "lint", "怎么加", "排查", "build"],
+}
+
+
 def _triggers_for(page, scan):
     words = []
-    if page["kind"] == "module":
+    kind = page["kind"]
+    if kind == "module":
         mid = page["module"]
-        words += [page["module"].split("/")[-1].split(".")[-1]]
+        words += [mid.split("/")[-1].split(".")[-1]]
         for e in scan["entries"]:
             if e["module"] == mid and e["kind"] == "http":
                 words += [w for w in re.split(r"[/{}:*]", e["detail"].get("path", "")) if len(w) >= 3 and not w.isdigit()]
@@ -1294,11 +1421,11 @@ def _triggers_for(page, scan):
                 words.append(x["name"])
                 if x["detail"].get("table"):
                     words.append(x["detail"]["table"])
-    elif page["kind"] == "modules":
-        words = [m.split("/")[-1].split(".")[-1] for m in page.get("modules", [])] + ["模块"]
+    elif kind.startswith("domain"):
+        words = [page.get("name", ""), page.get("domain", "")] + [m.split("/")[-1] for m in page.get("modules", [])]
+        words += {"domain-terms": ["术语"], "domain-config": ["配置"], "domain-flow": ["流程"]}.get(kind, [])
     else:
-        words = {"overview": ["构建", "技术栈", "build", "依赖", "目录", "术语"],
-                 "architecture": ["架构", "分层", "依赖", "入口", "接口", "api", "路由", "表", "实体", "模型"]}.get(page["kind"], [])
+        words = KIND_TRIGGERS.get(kind, [])
     seen, out = set(), []
     for w in words:
         if w and w.lower() not in seen and len(w) >= 2:
@@ -1313,10 +1440,10 @@ def render_template(kind, page, scan):
         F.die(f"模板不存在：{tpl}")
     text = tpl.read_text(encoding="utf-8")
     fill = {"id": page["id"], "kind": kind, "module": page.get("module", ""), "goal": page.get("goal", ""),
+            "name": page.get("name") or page.get("module") or kind, "domain": page.get("domain", ""),
             "hints": "；".join(page.get("hints", [])) or "（无）", "date": F.now()[:10],
             "triggers": _yaml_list(_triggers_for(page, scan)), "paths": _yaml_list(page.get("paths", [])),
-            "sources": _yaml_list(page.get("sources", [])), "title": page.get("module") or kind,
-            "modules": "、".join(page.get("modules", [])) or "（无）"}
+            "sources": _yaml_list(page.get("sources", [])), "modules": "、".join(page.get("modules", [])) or "（待确认）"}
     for k, v in fill.items():
         text = text.replace("{{" + k + "}}", str(v))
     return text
@@ -1380,8 +1507,8 @@ def cmd_draft(ctx, a):
         written.append(p["id"])
     for w in written:
         print(f"已写草稿 {w}")
-    for s in skipped:
-        print(f"跳过 {s}")
+    for s_ in skipped:
+        print(f"跳过 {s_}")
     if written:
         print("下一步：对每页执行 flowctl kb facts --page <id> 取事实，按模板写正文；写完 flowctl kb lint")
 
@@ -1390,95 +1517,156 @@ def _cap(items, n=FACT_CAP):
     return items[:n], max(0, len(items) - n)
 
 
+def mermaid_deps(scan, module_ids=None):
+    """由 import 边生成依赖图骨架。"""
+    ids = {m["id"] for m in scan["modules"]}
+    if module_ids:
+        ids &= set(module_ids)
+    alias = {mid: f"m{i}" for i, mid in enumerate(sorted(ids))}
+    lines = ["```mermaid", "graph LR"]
+    for mid, al in alias.items():
+        lines.append(f"  {al}[{mid}]")
+    for e in scan["edges"]:
+        if e["from"] in alias and e["to"] in alias:
+            lines.append(f"  {alias[e['from']]} -->|{e['count']}| {alias[e['to']]}")
+    lines.append("```")
+    return "\n".join(lines)
+
+
+def mermaid_er(models):
+    lines = ["```mermaid", "erDiagram"]
+    seen = set()
+    for x in models:
+        name = re.sub(r"\W", "_", x["detail"].get("table") or x["name"]).upper()
+        if name in seen:
+            continue
+        seen.add(name)
+        lines.append(f"  {name} {{")
+        lines.append(f"    string _ \"{x['name']} @ {x['file']}:{x['line']}\"")
+        lines.append("  }")
+    lines += ["  %% 关系只画有证据的：外键字段、关联注解、join；在这里补 A ||--o{ B : label", "```"]
+    return "\n".join(lines)
+
+
+def _group_entries(entries):
+    groups = defaultdict(list)
+    for e in entries:
+        g = _entry_group(e)
+        groups[g if g else (e["kind"], "其他")].append(e)
+    return groups
+
+
 def page_facts(page, scan):
     kind, mid = page["kind"], page.get("module")
+    mods_brief = [{k: m[k] for k in ("id", "lang", "files", "dirs", "layout", "entries", "models")} for m in scan["modules"]]
+    ents = real_entries(scan)
     if kind == "module":
-        sel = {"entries": [e for e in scan["entries"] if e["module"] == mid],
-               "models": [x for x in scan["models"] if x["module"] == mid],
-               "externals": [x for x in scan["externals"] if x["module"] == mid],
-               "configs": [c for c in scan["configs"] if c["module"] == mid],
-               "edges_out": [e for e in scan["edges"] if e["from"] == mid],
-               "edges_in": [e for e in scan["edges"] if e["to"] == mid],
-               "module": next((m for m in scan["modules"] if m["id"] == mid), None)}
-    elif kind == "modules":
-        ids = set(page.get("modules", []))
-        sel = {"groups": [{"module": m, "entries": [e for e in scan["entries"] if e["module"] == m["id"]][:8],
-                           "models": [x for x in scan["models"] if x["module"] == m["id"]][:6],
-                           "edges_out": [e for e in scan["edges"] if e["from"] == m["id"]],
-                           "edges_in": [e for e in scan["edges"] if e["to"] == m["id"]]}
-                          for m in scan["modules"] if m["id"] in ids]}
-    elif kind == "overview":
-        sel = {"build": scan["build"], "configs": scan["configs"], "languages": scan["languages"], "stats": scan["stats"],
-               "modules": [{k: m[k] for k in ("id", "lang", "files", "dirs", "layout")} for m in scan["modules"]],
-               "tests": scan["tests"]}
-    elif kind == "architecture":
-        by_mod = defaultdict(Counter)
-        for e in scan["entries"]:
-            if e["kind"] in REAL_ENTRY_KINDS:
-                by_mod[e["module"]][e["kind"]] += 1
-        sel = {"modules": [{k: m[k] for k in ("id", "lang", "files", "dirs", "layers", "layout", "packages")} for m in scan["modules"]],
-               "edges": scan["edges"], "cycles": scan["stats"]["cycles"], "externals": scan["externals"],
-               "entry_summary": {m: dict(c) for m, c in by_mod.items()},
-               "entries": [e for e in scan["entries"] if e["kind"] in REAL_ENTRY_KINDS],
-               "models": scan["models"]}
-    else:  # 旧版页
-        sel = {"models": scan["models"], "entries": scan["entries"]}
-    return sel
+        return {"entries": [e for e in scan["entries"] if e["module"] == mid],
+                "models": [x for x in scan["models"] if x["module"] == mid],
+                "externals": [x for x in scan["externals"] if x["module"] == mid],
+                "configs": [c for c in scan["configs"] if c["module"] == mid],
+                "edges_out": [e for e in scan["edges"] if e["from"] == mid],
+                "edges_in": [e for e in scan["edges"] if e["to"] == mid],
+                "module": next((m for m in scan["modules"] if m["id"] == mid), None)}
+    if kind.startswith("domain"):
+        dmods = set(page.get("modules", []))
+        slug = page.get("domain", "")
+        d_ents = [e for e in ents if _entry_group(e) and slugify(_entry_group(e)[1]) == slug] or [e for e in ents if e["module"] in dmods]
+        sel = {"entries": d_ents, "models": [x for x in scan["models"] if x["module"] in dmods],
+               "edges": [e for e in scan["edges"] if e["from"] in dmods or e["to"] in dmods],
+               "configs": [c for c in scan["configs"] if c["module"] in dmods],
+               "externals": [x for x in scan["externals"] if x["module"] in dmods], "domain_modules": sorted(dmods)}
+        if kind in ("domain", "domain-flow"):
+            sel["mermaid"] = mermaid_deps(scan, dmods) if dmods else None
+        return sel
+    if kind == "quickref":
+        return {"modules": mods_brief, "entry_groups": {f"{k[0]}:{k[1]}": len(v) for k, v in _group_entries(ents).items()},
+                "commands": scan["build"]["commands"], "cycles": scan["stats"]["cycles"]}
+    if kind == "arch-overview":
+        return {"modules": mods_brief, "edges": scan["edges"], "entry_groups": {f"{k[0]}:{k[1]}": len(v) for k, v in _group_entries(ents).items()},
+                "externals": scan["externals"][:FACT_CAP], "mermaid": mermaid_deps(scan)}
+    if kind == "business-flows":
+        groups = _group_entries(ents)
+        return {"groups": [{"group": f"{k[0]}:{k[1]}", "count": len(v), "entries": v[:6]} for k, v in
+                           sorted(groups.items(), key=lambda kv: -len(kv[1]))[:12]], "edges": scan["edges"]}
+    if kind == "module-dependencies":
+        return {"edges": scan["edges"], "cycles": scan["stats"]["cycles"], "modules": mods_brief, "mermaid": mermaid_deps(scan)}
+    if kind == "interfaces":
+        by_mod = defaultdict(list)
+        for e in ents:
+            by_mod[e["module"]].append(e)
+        return {"by_module": [{"module": m, "counts": dict(Counter(e["kind"] for e in v)), "entries": v[:8]}
+                              for m, v in sorted(by_mod.items(), key=lambda kv: -len(kv[1]))]}
+    if kind == "data-model":
+        return {"models": scan["models"], "mermaid": mermaid_er(scan["models"][:40])}
+    if kind == "tech-stack":
+        return {"build": scan["build"], "languages": scan["languages"]}
+    if kind == "config-and-dependencies":
+        return {"configs": scan["configs"], "externals": scan["externals"]}
+    if kind == "patterns":
+        return {"externals": scan["externals"][:FACT_CAP], "hint": "scan 不抽横切机制；用 grep 找统一错误类型、日志封装、鉴权中间件、事务注解、配置加载入口，各给一个 file:line"}
+    if kind == "domain-concepts":
+        return {"models": scan["models"], "entry_groups": {f"{k[0]}:{k[1]}": len(v) for k, v in _group_entries(ents).items()}}
+    if kind == "dev-guide":
+        return {"commands": scan["build"]["commands"], "tests": scan["tests"], "modules": mods_brief,
+                "entry_sample": ents[:10], "model_sample": scan["models"][:6]}
+    return {"entries": ents, "models": scan["models"]}
 
 
-def _entry_line(e, with_module):
+def _entry_line(e, with_module=True):
     h = e["detail"].get("handler")
     return (f"- [{KIND_LABEL.get(e['kind'], '证据-起点')}] {e['kind']} {e['name']} → {e['file']}:{e['line']}"
             + (f" ({h})" if h else "") + (f" [{e['module']}]" if with_module else ""))
 
 
-def _model_line(x, with_module):
+def _model_line(x, with_module=True):
     t = x["detail"].get("table")
     return (f"- [证据-数据] {x['kind']} {x['name']}" + (f" 表 {t}" if t else "") + f" → {x['file']}:{x['line']}"
             + (f" [{x['module']}]" if with_module else ""))
 
 
 def facts_markdown(page, sel):
-    lines = [f"# 事实：{page['id']}（来自 .ai/kb/scan.json，每条都带 file:line；没列出的就是 scan 没找到；只挑有代表性的写进页面）"]
+    lines = [f"# 事实：{page['id']}（来自 .ai/kb/scan.json，每条带 file:line；没列出的就是 scan 没找到；只挑有代表性的写进页面）"]
     m = sel.get("module")
+    wm = m is None
     if m:
         lines.append(f"- 模块 {m['id']}：{m['files']} 个源文件，{m['tests']} 个测试文件，目录 {', '.join(m['dirs'][:6])}，包 {', '.join(m['packages'][:5])}")
-    with_module = "module" not in sel and "groups" not in sel
+    if sel.get("domain_modules") is not None:
+        lines.append(f"- 涉及模块：{', '.join(sel['domain_modules']) or '待确认（在 plan.json 的 modules 里补）'}")
     if "entries" in sel:
         shown, more = _cap(sel["entries"])
-        lines += [_entry_line(e, with_module) for e in shown]
+        lines += [_entry_line(e, wm) for e in shown]
         if more:
             kinds = Counter(e["kind"] for e in sel["entries"])
-            lines.append(f"- …另有 {more} 条入口未列（按类型：{', '.join(f'{k} {n}' for k, n in kinds.most_common())}），页面里按前缀或类型归组，不逐条列")
+            lines.append(f"- …另有 {more} 条入口未列（{', '.join(f'{k} {n}' for k, n in kinds.most_common())}），页面按前缀或类型归组，不逐条列")
     if "models" in sel:
         shown, more = _cap(sel["models"])
-        lines += [_model_line(x, with_module) for x in shown]
+        lines += [_model_line(x, wm) for x in shown]
         if more:
-            lines.append(f"- …另有 {more} 个模型未列，页面里只写核心实体")
+            lines.append(f"- …另有 {more} 个模型未列，页面只写核心实体")
     for x in sel.get("externals", [])[:FACT_CAP]:
-        lines.append(f"- [证据-调用] 外部 {x['name']} ×{x['detail']['count']} → {x['file']}:{x['line']}")
+        lines.append(f"- [证据-调用] 外部 {x['name']} ×{x['detail']['count']} → {x['file']}:{x['line']}" + (f" [{x['module']}]" if wm else ""))
     for c in sel.get("configs", [])[:FACT_CAP]:
-        lines.append(f"- [证据-配置] {c['file']}（只列路径，不要把配置值写进文档）")
+        lines.append(f"- [证据-配置] {c['file']}（只列路径，不写配置值）")
     for e in sel.get("edges_out", []):
         lines.append(f"- [证据-调用] 依赖 {e['to']}（import ×{e['count']}）")
     for e in sel.get("edges_in", []):
         lines.append(f"- [证据-调用] 被 {e['from']} 依赖（import ×{e['count']}）")
-    for g in sel.get("groups", []):
-        mm = g["module"]
-        lines.append(f"## {mm['id']}（{mm['lang']}，{mm['files']} 文件）目录 {', '.join(mm['dirs'][:4])}")
-        lines += [_entry_line(e, False) for e in g["entries"]]
-        lines += [_model_line(x, False) for x in g["models"]]
-        deps = ", ".join(f"{e['to']} ×{e['count']}" for e in g["edges_out"])
-        users = ", ".join(f"{e['from']} ×{e['count']}" for e in g["edges_in"])
-        lines.append(f"- 依赖：{deps or '无'}；被依赖：{users or '无'}")
     if "edges" in sel:
-        lines.append("- 模块依赖边（from → to ×count）：" + "; ".join(f"{e['from']} → {e['to']} ×{e['count']}" for e in sel["edges"]) if sel["edges"] else "- 未发现模块间 import")
-        lines.append("- 循环依赖：" + ("; ".join(" -> ".join(c) for c in sel["cycles"]) if sel.get("cycles") else "未发现"))
-    if "entry_summary" in sel:
-        lines.append("- 各模块入口数（按类型）：" + "; ".join(f"{mo} {', '.join(f'{k} {n}' for k, n in c.items())}" for mo, c in sel["entry_summary"].items()))
-    if "modules" in sel and "module" not in sel:
+        lines.append("- 模块依赖边（from → to ×count）：" + ("; ".join(f"{e['from']} → {e['to']} ×{e['count']}" for e in sel["edges"]) or "无"))
+    if "cycles" in sel:
+        lines.append("- 循环依赖：" + ("; ".join(" -> ".join(c) for c in sel["cycles"]) if sel["cycles"] else "未发现"))
+    if "entry_groups" in sel:
+        lines.append("- 入口分组（类型:组 = 数量）：" + "; ".join(f"{k} = {n}" for k, n in sorted(sel["entry_groups"].items(), key=lambda kv: -kv[1])[:20]))
+    for g in sel.get("groups", []):
+        lines.append(f"## 链路候选 {g['group']}（{g['count']} 个入口）")
+        lines += [_entry_line(e) for e in g["entries"]]
+    for bm in sel.get("by_module", []):
+        lines.append(f"## {bm['module']}：" + ", ".join(f"{k} {n}" for k, n in bm["counts"].items()))
+        lines += [_entry_line(e, False) for e in bm["entries"]]
+    if "modules" in sel and m is None:
         for mm in sel["modules"]:
-            lines.append(f"- 模块 {mm['id']}（{mm['lang']}，{mm['files']} 文件，{mm.get('layout')}）目录 {', '.join(mm['dirs'][:4])}")
+            lines.append(f"- 模块 {mm['id']}（{mm['lang']}，{mm['files']} 文件，入口 {mm['entries']}，模型 {mm['models']}）目录 {', '.join(mm['dirs'][:4])}")
     if "build" in sel:
         b = sel["build"]
         for man in b["manifests"]:
@@ -1488,10 +1676,21 @@ def facts_markdown(page, sel):
                 lines.append(f"  - 依赖 {d.get('group', '') + ':' if d.get('group') else ''}{d['artifact']} {d.get('version') or '（版本未写）'}{'' if d.get('resolved', True) else '（未解析）'} → {man['file']}:{d['line']}")
             if len(man["dependencies"]) > FACT_CAP:
                 lines.append(f"  - …另有 {len(man['dependencies']) - FACT_CAP} 个依赖，页面只列框架与中间件客户端")
-        for k, v in b["commands"].items():
+        lines.append(f"- 语言统计：{json.dumps(sel.get('languages', {}), ensure_ascii=False)}")
+    if "commands" in sel:
+        for k, v in sel["commands"].items():
             if v:
                 lines.append(f"- 命令 {k}：`{v['cmd']}`（猜测：{v['why']}；必须实际跑过才能写「已验证」）")
-        lines.append(f"- 语言统计：{json.dumps(sel['languages'], ensure_ascii=False)}；测试：{json.dumps(sel['tests'], ensure_ascii=False)}")
+    if "tests" in sel:
+        lines.append(f"- 测试：{json.dumps(sel['tests'], ensure_ascii=False)}")
+    for e in sel.get("entry_sample", []):
+        lines.append(_entry_line(e))
+    for x in sel.get("model_sample", []):
+        lines.append(_model_line(x))
+    if sel.get("hint"):
+        lines.append(f"- 提示：{sel['hint']}")
+    if sel.get("mermaid"):
+        lines += ["", "## 图骨架（可直接粘进页面再补标注）", sel["mermaid"]]
     return "\n".join(lines) + "\n"
 
 
@@ -1518,9 +1717,11 @@ class Page:
         self.rel = str(path.relative_to(kbroot))
         self.text = path.read_text(encoding="utf-8", errors="replace")
         self.meta, self.body = F.parse_frontmatter(self.text)
-        self.id = str(self.meta.get("id") or path.stem)
+        self.id = str(self.meta.get("id") or page_id_for(self.rel))
         self.kind = str(self.meta.get("kind") or "")
         self.module = str(self.meta.get("module") or "")
+        self.domain = str(self.meta.get("domain") or "")
+        self.name = str(self.meta.get("name") or "")
         self.summary = str(self.meta.get("summary") or "")
         self.triggers = [t for t in F._as_list(self.meta.get("triggers")) if t]
         self.paths = [p for p in F._as_list(self.meta.get("paths")) if p]
@@ -1535,12 +1736,21 @@ class Page:
             out.append((m.group(1), int(m.group(2)), int(m.group(3)) if m.group(3) else None))
         return out
 
+    def has_diagram(self):
+        return "```mermaid" in self.body
+
 
 def load_pages(ctx):
     root = kb_dir(ctx)
     if not root.is_dir():
         return []
-    return [Page(p, root) for p in sorted(root.rglob("*.md")) if not p.name.startswith("_") and p.name != "index.md"]
+    pages = []
+    for p in sorted(root.rglob("*.md")):
+        rel = p.relative_to(root)
+        if p.name.startswith("_") or (p.name in README_NAMES and len(rel.parts) <= 2):
+            continue  # 根和三层目录下的 README 是生成的导航；domains/<域>/README.md 是 SDD 正文
+        pages.append(Page(p, root))
+    return pages
 
 
 def _line_count_cache():
@@ -1549,7 +1759,8 @@ def _line_count_cache():
     def count(p):
         if p not in cache:
             try:
-                cache[p] = read_text(p).count("\n") + (0 if read_text(p).endswith("\n") else 1)
+                t = read_text(p)
+                cache[p] = t.count("\n") + (0 if t.endswith("\n") else 1)
             except OSError:
                 cache[p] = None
         return cache[p]
@@ -1564,17 +1775,17 @@ def lint_pages(ctx, pages):
     for p in pages:
         e = lambda msg: errors.append(f"{p.rel}: {msg}")
         w = lambda msg: warns.append(f"{p.rel}: {msg}")
-        want = f"module-{p.path.stem}" if p.kind == "module" else p.path.stem
+        want = page_id_for(p.rel)
         if p.id != want:
-            e(f"id「{p.id}」与文件名不一致（应为 {want}）")
+            e(f"id「{p.id}」与路径不一致（应为 {want}）")
         if ids[p.id] > 1:
             e(f"id 重复：{p.id}")
         if str(p.meta.get("type") or "") != "kb":
             e("缺少 type: kb")
-        if p.kind not in PAGE_KINDS:
+        if p.kind not in PAGE_KINDS and p.kind not in LEGACY_KINDS:
             e(f"kind 不合法：{p.kind or '（空）'}")
         if not p.summary or TODO in p.summary:
-            e("summary 未填写（index.md 靠它生成）")
+            e("summary 未填写（README 靠它生成）")
         if not p.meta.get("updated"):
             e("缺少 updated")
         if p.kind == "module" and not (p.triggers or p.paths):
@@ -1585,9 +1796,11 @@ def lint_pages(ctx, pages):
             e("kb:manual 标记不成对")
         if not re.search(r"^## 引用文件\s*$", p.body, re.M):
             e("缺少「## 引用文件」一节")
-        for s in p.sources:
-            if s not in tracked and not (ctx.root / s).exists():
-                e(f"sources 里的文件不存在：{s}")
+        if p.kind in DIAGRAM_REQUIRED and not p.has_diagram():
+            e("核心页必须有 mermaid 图（架构图 / 流程图 / 依赖图 / ER 图）")
+        for s_ in p.sources:
+            if s_ not in tracked and not (ctx.root / s_).exists():
+                e(f"sources 里的文件不存在：{s_}")
         for path, a1, a2 in p.refs():
             full = ctx.root / path
             if path not in tracked and not full.exists():
@@ -1596,15 +1809,15 @@ def lint_pages(ctx, pages):
             n = count(full)
             if n is not None and (a1 > n or (a2 and a2 > n)):
                 e(f"{path}:{a1}{'-' + str(a2) if a2 else ''} 超出文件行数 {n}")
-        for m in re.finditer(r"```[^\n]*\n(.*?)```", p.body, re.S):
-            if m.group(1).count("\n") > 12:
-                w(f"代码块超过 12 行（{m.group(1).count(chr(10))} 行），知识库只放引用不放实现")
+        for mm in re.finditer(r"```(?!mermaid)[^\n]*\n(.*?)```", p.body, re.S):
+            if mm.group(1).count("\n") > 12:
+                w(f"代码块超过 12 行（{mm.group(1).count(chr(10))} 行），知识库只放引用不放实现")
         n_lines = p.body.count("\n")
-        limit = 110 if p.kind == "module" else 180
+        limit = LINE_LIMITS.get(p.kind, 130)
         if n_lines > limit:
-            w(f"正文 {n_lines} 行，超过建议上限 {limit}：只留代表性入口和核心类型，其余靠 file:line 指路")
+            w(f"正文 {n_lines} 行，超过建议上限 {limit}：只留代表性内容，其余靠 file:line 指路")
         if p.kind in LEGACY_KINDS:
-            w("旧版拆分页，已不在默认规划内：把有用内容并进 architecture.md / overview.md 后删除")
+            w("旧版页，已不在规划内：把有用内容并进 architecture/ 对应页后删除")
     plan = load_json(kb_dir(ctx) / "plan.json", {})
     have = {p.rel for p in pages}
     for pp in plan.get("pages", []):
@@ -1617,7 +1830,7 @@ def cmd_lint(ctx, a):
     ctx.need_init()
     pages = load_pages(ctx)
     if not pages:
-        F.die("知识库里没有页面（.ai/kb/*.md）")
+        F.die("知识库里没有页面（.ai/kb/**/*.md）")
     errors, warns = lint_pages(ctx, pages)
     for x in errors:
         print(f"ERROR {x}")
@@ -1628,43 +1841,82 @@ def cmd_lint(ctx, a):
         sys.exit(1)
 
 
-# ---------------------------------------------------------------- freeze / status
+# ---------------------------------------------------------------- freeze：四个 README / status
 
-def render_index(ctx, pages, old_text=None):
-    by = {p.id: p for p in pages}
-    ov = by.get("overview")
-    lines = ["---", "id: index", "type: kb", "kind: index", f"updated: {F.now()[:10]}", "---", "",
-             "# 代码知识库", "",
-             "<!-- 由 flowctl kb freeze 从各页 frontmatter 生成，勿手改正文；人工内容放到末尾的 kb:manual 块里。-->", ""]
+def _fm(pid, kind):
+    return ["---", f"id: {pid}", "type: kb", f"kind: {kind}", f"updated: {F.now()[:10]}", "---", ""]
+
+
+def _table(rows, header):
+    return [header, "|" + "---|" * (header.count("|") - 1)] + rows + [""]
+
+
+def _cell(s):
+    return (s or "").replace("|", "/").replace("\n", " ")
+
+
+def render_readmes(ctx, pages, scan, old):
+    """返回 {相对路径: 文本}。old 是旧 README 文本，用来保留 kb:manual 块。"""
+    by_kind = defaultdict(list)
+    for p in pages:
+        by_kind[p.kind].append(p)
+    arch = [p for k, *_ in ARCH_PAGES for p in by_kind.get(k, [])]
+    mods = sorted(by_kind.get("module", []), key=lambda p: -(next((m["files"] for m in scan["modules"] if m["id"] == p.module), 0)))
+    doms = sorted(by_kind.get("domain", []), key=lambda p: p.id)
+    quick = by_kind.get("quickref", [None])[0]
+    ov = by_kind.get("arch-overview", [None])[0]
+    name = (scan["build"]["manifests"][0].get("name") if scan["build"]["manifests"] else None) or ctx.root.name
+    out = {}
+    # 根 README
+    L = _fm("README", "index") + [f"# {name} 代码知识库", "",
+         "<!-- 由 flowctl kb freeze 生成，勿手改正文；人工内容放到末尾的 kb:manual 块里。 -->", ""]
     if ov and ov.summary:
-        lines += [ov.summary, ""]
-    lines += ["用法：先按下表的关键词找到相关页（或执行 `flowctl kb recall --text <需求>`），只读命中的页；页里的 `file:line` 仍要打开核对。", ""]
-    lines += ["## 目录", "", "```text", ".ai/kb/", "├── index.md          ← 本文（导航）"]
-    for pid, desc in (("overview", "技术栈、构建命令、目录地图、术语"), ("architecture", "分层与依赖、入口总览、数据模型总览"),
-                      ("modules", "未单独开页的模块，每个一节")):
-        if pid in by:
-            lines.append(f"├── {pid + '.md':<18}{desc}")
-    mods = sorted((p for p in pages if p.kind == "module"), key=lambda x: x.id)
+        L += [ov.summary, ""]
+    L += [f"> **人类导航**：本文档 · **AI 速查**：[ai-quick-reference.md](ai-quick-reference.md) · 事实来源：代码为准，文档与代码冲突时以当前分支为准并回补本目录（`flowctl kb status` 检测过期）。", ""]
+    L += ["## 目录结构", "", "```text", ".ai/kb/", "├── README.md                     ← 本文档（总导航）",
+          "├── ai-quick-reference.md         ← AI 首选速查", f"├── architecture/                 ← {len(arch)} 页：总览、链路、依赖、入口、数据、栈、配置、模式、术语、指引",
+          f"├── modules/                      ← {len(mods)} 个模块，每个一页", f"└── domains/                      ← {len(doms)} 个业务域，每域 README + 核心流程 + 术语 + 配置",
+          "```", ""]
+    L += ["## 按角色阅读", "", "| 场景 | 顺序 |", "|---|---|",
+          "| 新人入职 | architecture/overview.md → architecture/business-flows.md → modules/README.md → domains/ |",
+          "| 需求分析 / 方案 | ai-quick-reference.md → 对应 domains/<域>/README.md → architecture/interfaces.md、data-model.md → 对应 modules/ 页 |",
+          "| 问题排查 | architecture/module-dependencies.md → architecture/config-and-dependencies.md → 对应 modules/ 页 |",
+          "| 加接口 / 加字段 | architecture/dev-guide.md → domains/<域>/配置清单.md |", ""]
+    L += ["## 三层长期知识", "", "| 层 | 目录 | 内容 |", "|---|---|---|",
+          "| 架构 | [architecture/](architecture/README.md) | 全局链路、依赖、入口、数据模型、技术栈、开发指引 |",
+          "| 模块 | [modules/](modules/README.md) | 每个模块的职责、入口、核心类型、上下游 |",
+          "| 业务域 | [domains/](domains/README.md) | 业务流程 SDD、术语、配置 |", ""]
     if mods:
-        lines.append(f"└── modules/          单独开页的 {len(mods)} 个模块")
-    lines += ["```", ""]
-    if mods:
-        lines += ["## 模块索引", "", "| 模块 | 页 | 一句话 | 关键词 |", "|---|---|---|---|"]
-        for p in mods:
-            lines.append(f"| {p.module} | [{p.id}]({p.rel}) | {p.summary.replace('|', '/')} | {', '.join(p.triggers[:6])} |")
-        lines.append("")
-    others = [p for p in pages if p.kind != "module"]
-    if others:
-        lines += ["## 其他页", "", "| 页 | 一句话 | 关键词 |", "|---|---|---|"]
-        for p in sorted(others, key=lambda x: (x.kind not in FIXED_PAGES, FIXED_PAGES.index(x.kind) if x.kind in FIXED_PAGES else 9, x.id)):
-            lines.append(f"| [{p.id}]({p.rel}) | {p.summary.replace('|', '/')} | {', '.join(p.triggers[:6])} |")
-        lines.append("")
-    lines += ["## 按问题找页", "", "| 问题 | 先看 |", "|---|---|",
-              "| 用什么栈、怎么构建和跑测试、目录在哪 | overview.md |",
-              "| 谁依赖谁、对外有哪些入口、有哪些表 | architecture.md |",
-              "| 某个模块管什么、入口在哪、上下游是谁 | modules/<模块>.md，没有单独页的看 modules.md |",
-              "| 知识库是否过期 | `flowctl kb status` |", ""]
-    text = "\n".join(lines)
+        L += ["## 模块索引", ""] + _table([f"| {p.module} | [{Path(p.rel).name}]({p.rel}) | {_cell(p.summary)} |" for p in mods], "| 模块 | 文档 | 一句话 |")
+    if arch:
+        L += ["## architecture 文档索引", ""] + _table([f"| [{Path(p.rel).name}]({p.rel}) | {_cell(p.summary)} |" for p in arch], "| 文档 | 内容 |")
+    if doms:
+        L += ["## 业务域", ""] + _table([f"| {p.name or p.domain} | [README.md]({p.rel}) | [核心流程](domains/{p.domain}/核心流程.md) · [术语](domains/{p.domain}/术语梳理.md) · [配置](domains/{p.domain}/配置清单.md) | {_cell(p.summary)} |" for p in doms], "| 域 | SDD | 配套 | 一句话 |")
+    L += ["## 维护说明", "", "- 代码改动后执行 `flowctl kb status`；有过期页就运行 `/flow-kb` 刷新，只重写过期页。",
+          "- 新增模块 / 业务域：重跑 `flowctl kb scan` 与 `flowctl kb plan`，确认后 `flowctl kb draft`。",
+          "- 人工修订放在 `<!-- kb:manual -->` 块里或把页标 `protected: true`，刷新不会覆盖。", ""]
+    out["README.md"] = _with_manual("\n".join(L), old.get("README.md"))
+    # architecture/README
+    L = _fm("architecture-README", "index") + ["# 架构层导航", "", "> AI 首选：[../ai-quick-reference.md](../ai-quick-reference.md)。本目录回答全局问题：链路、依赖、入口、数据、栈、模式。", ""]
+    L += ["## 推荐阅读顺序", "", "```text", "1. overview.md → 2. business-flows.md → 3. module-dependencies.md → 4. interfaces.md / data-model.md → 5. dev-guide.md", "```", ""]
+    L += ["## 文档索引", ""] + _table([f"| [{Path(p.rel).name}]({Path(p.rel).name}) | {_cell(p.summary)} | {', '.join(p.triggers[:5])} |" for p in arch], "| 文档 | 内容 | 关键词 |")
+    out["architecture/README.md"] = _with_manual("\n".join(L), old.get("architecture/README.md"))
+    # modules/README
+    L = _fm("modules-README", "index") + [f"# 模块索引（{len(mods)} 个）", "", "> 全局依赖见 [../architecture/module-dependencies.md](../architecture/module-dependencies.md)；入口总览见 [../architecture/interfaces.md](../architecture/interfaces.md)。", ""]
+    rows = []
+    for p in mods:
+        mm = next((x for x in scan["modules"] if x["id"] == p.module), {})
+        rows.append(f"| {p.module} | [{Path(p.rel).name}]({Path(p.rel).name}) | {mm.get('files', '')} | {mm.get('entries', '')} | {mm.get('models', '')} | {_cell(p.summary)} |")
+    L += _table(rows, "| 模块 | 文档 | 文件 | 入口 | 模型 | 职责摘要 |")
+    out["modules/README.md"] = _with_manual("\n".join(L), old.get("modules/README.md"))
+    # domains/README
+    L = _fm("domains-README", "index") + [f"# 业务域索引（{len(doms)} 个）", "", "> 每个域：README.md（SDD：概述、流程图、分步说明、数据流转、异常、证据清单）+ 核心流程.md + 术语梳理.md + 配置清单.md。", ""]
+    L += _table([f"| {p.name or p.domain} | [{p.domain}/README.md]({p.domain}/README.md) | {_cell(p.summary)} |" for p in doms], "| 域 | SDD | 一句话 |") if doms else ["（还没有业务域；在 plan.json 里加 `{\"id\": \"domain-<slug>\", \"kind\": \"domain\", \"name\": \"<名字>\", \"modules\": [...]}` 后重跑 plan / draft）", ""]
+    out["domains/README.md"] = _with_manual("\n".join(L), old.get("domains/README.md"))
+    return out
+
+
+def _with_manual(text, old_text):
     if old_text:
         for _, block in manual_blocks(old_text):
             text += "\n" + block + "\n"
@@ -1691,11 +1943,22 @@ def cmd_freeze(ctx, a):
         for x in errors:
             print(f"ERROR {x}")
         F.die("lint 有错误，先修好再 freeze")
-    idx = kb_dir(ctx) / "index.md"
-    idx.write_text(render_index(ctx, pages, idx.read_text(encoding="utf-8") if idx.exists() else None), encoding="utf-8")
-    man = _manifest_of(ctx, pages, load_json(kb_dir(ctx) / "scan.json"))
+    scan = need_scan(ctx)
+    old = {}
+    for rel in ("README.md", "architecture/README.md", "modules/README.md", "domains/README.md"):
+        p = kb_dir(ctx) / rel
+        if p.exists():
+            old[rel] = p.read_text(encoding="utf-8")
+    for rel, text in render_readmes(ctx, pages, scan, old).items():
+        p = kb_dir(ctx) / rel
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(text, encoding="utf-8")
+    legacy = kb_dir(ctx) / "index.md"
+    if legacy.exists():
+        legacy.unlink()
+    man = _manifest_of(ctx, pages, scan)
     dump(kb_dir(ctx) / "_manifest.json", man)
-    print(f"已冻结 {len(pages)} 页，基线 {(man['commit'] or '')[:7] or '（无提交）'}，写入 index.md 与 _manifest.json")
+    print(f"已冻结 {len(pages)} 页 + 4 个 README，基线 {(man['commit'] or '')[:7] or '（无提交）'}，写入 _manifest.json")
 
 
 def _changed_files(base):
@@ -1721,7 +1984,7 @@ def _changed_files(base):
 
 def compute_status(ctx):
     man = load_json(kb_dir(ctx) / "_manifest.json")
-    if not man or not (kb_dir(ctx) / "index.md").exists():
+    if not man or not (kb_dir(ctx) / "README.md").exists():
         return None
     base_ok = bool(man.get("commit") and F.rev(man["commit"]))
     mod, ad = _changed_files(man.get("commit"))
@@ -1765,15 +2028,15 @@ def cmd_status(ctx, a):
     ctx.need_init()
     st = compute_status(ctx)
     if st is None:
-        print("还没有知识库基线（缺 _manifest.json 或 index.md），运行 /flow-kb 生成")
+        print("还没有知识库基线（缺 _manifest.json 或 README.md），运行 /flow-kb 生成")
         sys.exit(11)
     if a.json:
         print(json.dumps(st, ensure_ascii=False, indent=2))
     else:
         print(f"基线 {(st['commit'] or '')[:7]}")
-        print(f"{'页':<28}{'状态':<6}原因")
+        print(f"{'页':<34}{'状态':<6}原因")
         for r in st["pages"]:
-            print(f"{r['id']:<28}{r['state']:<6}{r['why']}")
+            print(f"{r['id']:<34}{r['state']:<6}{r['why']}")
         if st["stale"]:
             print(f"{len(st['stale'])} 页过期：运行 /flow-kb 刷新（先 flowctl kb scan，再对每页 flowctl kb draft --force --page <id>）")
         else:
@@ -1790,7 +2053,7 @@ def recall_pages(ctx, text, paths, top=5):
         phits = [g for g in p.paths if any(F.glob_match(x, g) for x in paths)] if paths else []
         src = [x for x in paths if x in p.sources] if paths else []
         mod_hit = bool(text and p.module and F.trigger_hit(p.module.split("/")[-1].split(".")[-1], text))
-        pw = 2 if p.kind in ("module", "modules") else 1  # 总览页的 paths 覆盖全仓，按路径召回时让模块页排前面
+        pw = 2 if p.kind == "module" or p.kind.startswith("domain") else 1  # 总览页的 paths 覆盖全仓，按路径召回时让模块页排前面
         score = len(hits) + pw * len(phits) + 3 * (1 if src else 0) + (1 if mod_hit else 0)
         if score <= 0:
             continue

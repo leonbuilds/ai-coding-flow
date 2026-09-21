@@ -2,6 +2,7 @@
 id: {{id}}
 type: kb
 kind: module
+name: {{name}}
 module: {{module}}
 summary: <!-- kb:todo -->
 triggers: {{triggers}}
@@ -13,7 +14,7 @@ protected: false
 
 # {{module}}
 
-<!-- 规则：每条论断带 file:line；没证据写「待确认」；代码块 ≤10 行；整页 40–80 行，只写有代表性的；人工补充放 <!-- kb:manual --> … <!-- /kb:manual --> 里；frontmatter 只改 summary。 -->
+<!-- 规则：每条论断带 file:line；没证据写「待确认」；代码块 ≤10 行；只写有代表性的，其余靠 file:line 指路；图用 mermaid；人工补充放 <!-- kb:manual --> … <!-- /kb:manual --> 里；frontmatter 只改 summary。 -->
 <!-- 规划目标：{{goal}}；scan 提示：{{hints}} -->
 
 ## 模块信息
@@ -31,21 +32,16 @@ protected: false
 
 ## 关键入口
 
-<!-- 以 kb facts 的入口为底逐条确认；≤12 行，同前缀归组写「另 N 条」；scan 误报一句话带过。 -->
+<!-- ≤12 行，同前缀归组写「另 N 条」；scan 误报一句话带过。 -->
 
 | 类型 | 入口 | 处理 |
 |---|---|---|
-| HTTP | `GET /x/{id}` | `Handler.method` — <file:line> |
 
 ## 核心类型
 
-<!-- 实体、状态枚举、关键 DTO，≤8 条；说明不按字面理解的字段。 -->
-
-- `TypeName` — <作用> — <file:line>
+<!-- ≤8 条：实体、状态枚举、关键 DTO；说明不按字面理解的字段。 -->
 
 ## 上下游
-
-<!-- 上游：谁调用本模块；下游：依赖的模块与外部系统（HTTP / RPC / MQ / DB）。 -->
 
 | 方向 | 对象 | 方式 / 位置 |
 |---|---|---|
@@ -54,11 +50,11 @@ protected: false
 
 ## 关键流程
 
-<!-- 最多 2 条，从入口到落库或对外调用，每跳带行号：`入口 → A.f():line → B.g():line`。 -->
+<!-- 可选，最多 2 条：`入口 → A.f():line → B.g():line`；复杂的画一张小 flowchart。 -->
 
 ## 配置与风险
 
-<!-- 配置只列路径；风险点写改动时要小心的地方，没有写「无」。 -->
+<!-- 配置只列路径；风险写改动时要小心的地方。 -->
 
 ## 引用文件
 

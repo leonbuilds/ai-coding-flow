@@ -135,11 +135,13 @@ public class UserService {
         pp = self.repo / ".ai" / "kb" / "plan.json"
         plan = json.loads(pp.read_text())
         ids = [p["id"] for p in plan["pages"]]
-        # order 有 4 个入口 + 1 个模型 → 单独开页；user 没有入口 → 并入 modules.md
-        self.assertEqual(ids, ["overview", "architecture", "modules", "module-order"])
+        self.assertEqual(ids[:11], ["ai-quick-reference", "arch-overview", "business-flows", "module-dependencies", "interfaces",
+                                    "data-model", "tech-stack", "config-and-dependencies", "patterns", "domain-concepts", "dev-guide"])
+        self.assertEqual(ids[11:13], ["module-order", "module-user"])  # 全部模块都开页
+        self.assertEqual(ids[13:], ["domain-orders", "domain-orders-flow", "domain-orders-terms", "domain-orders-config"])  # /api/orders* 3 个入口 → 业务域候选
         by0 = {p["id"]: p for p in plan["pages"]}
-        self.assertEqual(by0["modules"]["modules"], ["user"])
-        self.assertEqual(plan["limits"]["max_module_pages"], 6)
+        self.assertEqual(by0["domain-orders"]["path"], "domains/orders/README.md")
+        self.assertEqual(by0["domain-orders"]["modules"], ["order"])
         self.assertLessEqual(len(by0["module-order"]["sources"]), 30)
         self.assertTrue(all(p["status"] == "planned" for p in plan["pages"]))
         plan["notes"].append("只关注 order")
@@ -147,8 +149,9 @@ public class UserService {
         for p in plan["pages"]:
             if p["id"] == "module-order":
                 p["goal"] = "自定义目标"
-        plan["limits"]["min_entries"] = 1  # 门槛降到 1：pay 的一个 HTTP 入口也够开页
-        plan["pages"].append({"id": "module-user", "kind": "module", "status": "planned"})  # 用户强制给 user 开页
+            if p["id"] == "domain-orders":
+                p["name"] = "订单"  # 改域名
+        plan["pages"].append({"id": "domain-billing", "kind": "domain", "name": "计费", "modules": ["user"], "status": "planned"})  # 手加一个域
         pp.write_text(json.dumps(plan, ensure_ascii=False))
         self.write(JAVA_BASE + "pay/PayController.java", "package com.acme.shop.pay;\n@RestController\npublic class PayController {\n    @PostMapping(\"/pay\")\n    public void pay() {}\n}\n")
         self.commit("pay")
@@ -160,27 +163,29 @@ public class UserService {
         self.assertEqual(plan["scope"]["exclude"], ["**/Gbk.java"])
         self.assertEqual(by["module-order"]["goal"], "自定义目标")
         self.assertEqual(by["module-pay"]["status"], "proposed")
-        self.assertEqual(by["module-user"]["status"], "planned")
-        self.assertEqual(by["module-user"]["path"], "modules/user.md")
-        self.assertEqual(by["modules"]["modules"], [])
-        by["module-user"]["status"] = "removed"
+        self.assertEqual(by["domain-orders"]["name"], "订单")
+        self.assertEqual(by["domain-orders-flow"]["name"], "订单")
+        self.assertEqual(by["domain-billing"]["path"], "domains/billing/README.md")
+        self.assertEqual(by["domain-billing-config"]["status"], "proposed")
+        by["domain-billing"]["status"] = "removed"
         pp.write_text(json.dumps(plan, ensure_ascii=False))
         self.f("kb", "plan")
         by = {p["id"]: p for p in json.loads(pp.read_text())["pages"]}
-        self.assertEqual(by["module-user"]["status"], "removed")
-        self.assertEqual(by["modules"]["modules"], ["user"])
+        self.assertEqual(by["domain-billing"]["status"], "removed")
+        self.assertEqual(by["domain-billing-terms"]["status"], "removed")  # 子页跟随
         s = json.loads((self.repo / ".ai" / "kb" / "scan.json").read_text())
         self.assertNotIn(JAVA_BASE + "user/Gbk.java", [f for m in s["modules"] for f in m["file_list"]])
 
-    def fill_pages(self):
+    def fill_pages(self, diagrams=True):
         """把所有草稿填成能过 lint 的最小内容。"""
         kb = self.repo / ".ai" / "kb"
-        for p in list(kb.glob("*.md")) + list(kb.glob("modules/*.md")):
-            if p.name == "index.md":
-                continue
+        for p in kb.rglob("*.md"):
+            if p.name in ("README.md", "index.md") and len(p.relative_to(kb).parts) <= 2:
+                continue  # 生成的导航页；domains/<域>/README.md 是正文
             t = p.read_text()
             t = t.replace("summary: <!-- kb:todo -->", f"summary: {p.stem} 一句话")
             t = t.replace("- <!-- kb:todo -->", f"- {JAVA_BASE}order/OrderController.java:8 — 查询订单入口")
+            t = t.replace("```text", "```mermaid") if diagrams else t.replace("```mermaid", "```text")
             p.write_text(t)
 
     def test_draft_lint_freeze_status_recall(self):
@@ -192,9 +197,10 @@ public class UserService {
         kb = self.repo / ".ai" / "kb"
         order = kb / "modules" / "order.md"
         self.assertTrue(order.exists())
-        self.assertFalse((kb / "modules" / "user.md").exists())
-        self.assertTrue((kb / "modules.md").exists())
-        self.assertIn("user", (kb / "modules.md").read_text())
+        self.assertTrue((kb / "modules" / "user.md").exists())
+        self.assertTrue((kb / "architecture" / "overview.md").exists())
+        self.assertTrue((kb / "domains" / "orders" / "README.md").exists())
+        self.assertIn("domain: orders", (kb / "domains" / "orders" / "核心流程.md").read_text())
         head = order.read_text().split("---")[1]
         self.assertIn("module: order", head)
         self.assertIn('"order"', head)
@@ -202,9 +208,23 @@ public class UserService {
         facts = self.f("kb", "facts", "--page", "module-order").stdout
         self.assertIn("GET /api/orders/{id} → " + JAVA_BASE + "order/OrderController.java:8 (getOrder)", facts)
         self.assertIn("被 user 依赖", facts)
+        dep = self.f("kb", "facts", "--page", "module-dependencies").stdout
+        self.assertIn("```mermaid", dep)
+        self.assertIn("-->|1|", dep)
+        er = self.f("kb", "facts", "--page", "data-model").stdout
+        self.assertIn("erDiagram", er)
+        self.assertIn("T_ORDER", er)
+        dom = self.f("kb", "facts", "--page", "domain-orders").stdout
+        self.assertIn("POST /api/orders", dom)
         r = self.f("kb", "lint", ok=False)
         self.assertEqual(r.returncode, 1)
         self.assertIn("summary 未填写", r.stdout)
+        self.fill_pages(diagrams=False)
+        r = self.f("kb", "lint", ok=False)
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("必须有 mermaid 图", r.stdout)
+        self.assertIn("architecture/overview.md", r.stdout)
+        self.assertNotIn("tech-stack.md: 核心页", r.stdout)
         self.fill_pages()
         self.f("kb", "lint")
         # 坏引用
@@ -216,10 +236,14 @@ public class UserService {
         self.assertIn("超出文件行数", r.stdout)
         order.write_text(t + "\n## 人工补充\n\n<!-- kb:manual -->\n手写的说明\n<!-- /kb:manual -->\n")
         self.f("kb", "freeze")
-        idx = (kb / "index.md").read_text()
-        self.assertIn("[module-order](modules/order.md)", idx)
+        idx = (kb / "README.md").read_text()
+        self.assertIn("[order.md](modules/order.md)", idx)
         self.assertIn("| order 一句话 |", idx)
-        self.assertIn("modules.md", idx)
+        self.assertIn("[README.md](domains/orders/README.md)", idx)
+        for rel in ("architecture/README.md", "modules/README.md", "domains/README.md"):
+            self.assertTrue((kb / rel).exists(), rel)
+        self.assertIn("[overview.md](overview.md)", (kb / "architecture" / "README.md").read_text())
+        self.assertFalse((kb / "index.md").exists())
         man = json.loads((kb / "_manifest.json").read_text())
         self.assertIn(JAVA_BASE + "order/OrderController.java", man["pages"]["module-order"]["sources"])
         r = self.f("kb", "status", ok=False)
@@ -235,11 +259,11 @@ public class UserService {
         self.commit("touch")
         self.assertEqual(self.f("kb", "status", ok=False).returncode, 10)
         # 手改与保护：protected 页不被 --force 覆盖；非 protected 页保留 manual 块
-        arch = kb / "architecture.md"
+        arch = kb / "architecture" / "tech-stack.md"
         arch.write_text(arch.read_text().replace("protected: false", "protected: true"))
         before = arch.read_text()
         self.f("kb", "scan")
-        r = self.f("kb", "draft", "--force", "--page", "architecture")
+        r = self.f("kb", "draft", "--force", "--page", "tech-stack")
         self.assertIn("protected", r.stdout)
         self.assertEqual(arch.read_text(), before)
         self.f("kb", "draft", "--force", "--page", "module-order")
@@ -252,7 +276,7 @@ public class UserService {
         res = json.loads(r.stdout)
         self.assertEqual(res[0]["id"], "module-order")
         r = self.f("kb", "recall", "--paths", JAVA_BASE + "user/UserService.java", "--json")
-        self.assertEqual(json.loads(r.stdout)[0]["id"], "modules")  # user 并在 modules.md 里，按目录 glob 命中
+        self.assertEqual(json.loads(r.stdout)[0]["id"], "module-user")
 
     def test_agent_scout_gets_kb(self):
         self.scan()

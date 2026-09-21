@@ -8,7 +8,7 @@
   .ai/specs/_scores.jsonl  每次使用后的打分记录
   .ai/changes/<日期-slug>/ 一次变更的全部过程档案
   .ai/current              当前进行中的变更名
-  .ai/kb/                  代码知识库：scan.json、plan.json、各页 .md、index.md、_manifest.json（见 kb.py）
+  .ai/kb/                  代码知识库：scan.json、plan.json、各层 README.md、各页 .md、_manifest.json（见 kb.py）
 
 快照存成隐藏 ref：refs/flow/<变更>/<任务>/{base,v1,final}，不动真实暂存区和分支。
 """
@@ -907,8 +907,8 @@ def cmd_agent(ctx, a):
         # scout 在 Codex 里是只读沙箱：召回结果由这里先写好，scout 只读 recalled.json
         cmd_recall(ctx, argparse.Namespace(text=extra, file=None, paths=None, top=None, json=False, record=True))
     extra += f"\n仓库根目录：{ctx.root}\n变更目录：{d}\n召回结果：{d / 'recalled.json'}\n"
-    if a.role == "scout" and (ctx.ai / "kb" / "index.md").exists():
-        extra += f"知识库索引：{ctx.ai / 'kb' / 'index.md'}（先读索引和下面召回的页，再查代码；页里的 file:line 仍要打开核对）\n"
+    if a.role == "scout" and (ctx.ai / "kb" / "README.md").exists():
+        extra += f"知识库索引：{ctx.ai / 'kb' / 'ai-quick-reference.md'}（先读索引和下面召回的页，再查代码；页里的 file:line 仍要打开核对）\n"
         extra += "知识库召回：\n" + kb.recall_text(kb.recall_pages(ctx, extra, [], 5))
     out = (Path(a.out) if Path(a.out).is_absolute() else Path.cwd() / a.out) if a.out else d / f"{a.role}.out.md"
     res = run_role(ctx, a.role, a.host, a.engine, a.model, a.reasoning, role_prompt(a.role, extra),

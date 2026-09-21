@@ -48,7 +48,7 @@
 │          代码知识库（kb scan/plan/draft/lint/freeze/status/recall）     │
 ├──────────────────────────────────────────────────────────────────────────┤
 │ ④ 资产层  spec 库（.ai/specs + ~/.ai-flow/specs）                        │
-│          代码知识库（.ai/kb/：模块页 + 路由索引 + 漂移基线）             │
+│          代码知识库（.ai/kb/：架构 / 模块 / 业务域三层 + 速查 + 漂移基线）             │
 │          变更档案（.ai/changes/<日期-slug>/）                           │
 └──────────────────────────────────────────────────────────────────────────┘
         ▲ 线上问题 / 复盘教训 ── 回写成 spec ── 下次需求自动召回 ┘
@@ -81,7 +81,7 @@ ai-coding-flow/
 │   └── project-template.md         仓库级规则模板，flow-onboard 用
 ├── playbooks/                      场景手册：read-code / add-field-api / bugfix / unit-test / code-review
 ├── skills/
-│   ├── flow/                       入口 skill + flowctl.py + kb.py + 6 个产线模板 + templates/kb/ 5 个知识库页模板
+│   ├── flow/                       入口 skill + flowctl.py + kb.py + 6 个产线模板 + templates/kb/ 16 个知识库页模板
 │   ├── flow-onboard/ flow-kb/ flow-propose/ flow-design/ flow-tasks/
 │   ├── flow-build/ flow-review/ flow-retro/ flow-incident/
 ├── agents/

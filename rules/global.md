@@ -10,7 +10,7 @@
 - 断言某个 API、字段、配置、依赖存在之前，先读源码确认，不能凭训练记忆或项目名字猜测。
 - 每条关键论断标出处：`file:line`。找不到出处的东西，在产物里明确标「新增」，不要和已有代码混在一起说。
 - 召回到的历史资料（spec、相似变更）只信标注了来源的部分；无法定位来源的，视为不存在。
-- 仓库有 `.ai/kb/` 时，找代码先读 `.ai/kb/index.md` 或执行 `"$HOME/.ai-flow/bin/flowctl" kb recall`，只读命中的页，再 grep 补漏；页里的 `file:line` 仍要打开核对，知识库本身不是证据。
+- 仓库有 `.ai/kb/` 时，找代码先读 `.ai/kb/ai-quick-reference.md` 或执行 `"$HOME/.ai-flow/bin/flowctl" kb recall`，只读命中的页，再 grep 补漏；页里的 `file:line` 仍要打开核对，知识库本身不是证据。
 
 ### 不擅自扩大范围
 

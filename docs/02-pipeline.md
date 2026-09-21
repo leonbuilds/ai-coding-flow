@@ -123,8 +123,8 @@ rm <这个任务新建的文件…>
 
 1. 问 `.ai/` 要不要提交进仓库：`flowctl init`（推荐）或 `flowctl init --local-only`（加进 `.git/info/exclude`，只留本地）。
 2. 按 `/flow-kb` 生成代码知识库 `.ai/kb/`：`flowctl kb scan` 抽事实 → `flowctl kb plan` 规划页面（门禁）→ `flowctl kb draft --all` → 逐页写作（每条带 `file:line`）→ `flowctl kb lint` 零错误 → `flowctl kb freeze`（见 [10-code-kb.md](10-code-kb.md)）。
-3. 写仓库规则文件（`CLAUDE.md` 或 `AGENTS.md`，参考 `rules/project-template.md`），以 `.ai/kb/overview.md` 为素材，只写 AI 从代码里读不出来的东西，并指向 `.ai/kb/index.md`；已有规则文件时只补充不覆盖。
-4. 起草 3–8 条 `status: draft` 的 spec，必须写 `when` 以及 `triggers` 或 `paths`；分层与依赖规则从 `.ai/kb/architecture.md` 起草。
+3. 写仓库规则文件（`CLAUDE.md` 或 `AGENTS.md`，参考 `rules/project-template.md`），以 `.ai/kb/architecture/` 的 tech-stack、dev-guide 为素材，只写 AI 从代码里读不出来的东西，并指向 `.ai/kb/index.md`；已有规则文件时只补充不覆盖。
+4. 起草 3–8 条 `status: draft` 的 spec，必须写 `when` 以及 `triggers` 或 `paths`；分层与依赖规则从 `.ai/kb/architecture/module-dependencies.md` 起草。
 5. `flowctl specs lint` 零错误。
 6. **人工门禁**：逐条确认规则文件和 spec，确认过的 spec 改成 `active`。
 
