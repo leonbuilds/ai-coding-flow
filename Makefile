@@ -1,4 +1,4 @@
-.PHONY: test doctor sync sync-dry uninstall demo demo-codex
+.PHONY: test doctor sync sync-dry update uninstall demo demo-codex
 
 test:          ## 全部测试（临时目录，不碰真实配置）
 	python3 -m unittest discover -s tests -v
@@ -11,6 +11,11 @@ sync-dry:      ## 预览 sync 会做什么
 
 sync:          ## 安装 / 更新到 Claude Code 与 Codex
 	python3 workbench/wb.py sync
+
+update:        ## 拉最新代码并同步两端（新 skill 建链接、规则区块重写），最后体检
+	git pull --ff-only
+	python3 workbench/wb.py sync
+	python3 workbench/wb.py doctor
 
 uninstall:
 	python3 workbench/wb.py uninstall

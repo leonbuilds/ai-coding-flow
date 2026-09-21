@@ -71,6 +71,12 @@ python3 workbench/wb.py mcp apply    # 逐条确认后才写入
 
 常用命令：
 
+更新到最新版：
+
+```bash
+cd ai-coding-flow && make update    # git pull + 两端同步 + 体检；skill 是软链接，平时 git pull 即生效
+```
+
 ```bash
 F="$HOME/.ai-flow/bin/flowctl"
 "$F" status               # 当前进度和下一步
